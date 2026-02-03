@@ -49,7 +49,6 @@ function median(values: number[]): number {
 
 async function runModel(opts: {
   label: string;
-  // oxlint-disable-next-line typescript/no-explicit-any
   model: Model<any>;
   apiKey: string;
   runs: number;

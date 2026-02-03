@@ -34,25 +34,15 @@ describe("resolveTelegramForumThreadId", () => {
 
 describe("buildTelegramThreadParams", () => {
   it("omits General topic thread id for message sends", () => {
-    expect(buildTelegramThreadParams({ id: 1, scope: "forum" })).toBeUndefined();
+    expect(buildTelegramThreadParams(1)).toBeUndefined();
   });
 
   it("includes non-General topic thread ids", () => {
-    expect(buildTelegramThreadParams({ id: 99, scope: "forum" })).toEqual({
-      message_thread_id: 99,
-    });
-  });
-
-  it("keeps thread id=1 for dm threads", () => {
-    expect(buildTelegramThreadParams({ id: 1, scope: "dm" })).toEqual({
-      message_thread_id: 1,
-    });
+    expect(buildTelegramThreadParams(99)).toEqual({ message_thread_id: 99 });
   });
 
   it("normalizes thread ids to integers", () => {
-    expect(buildTelegramThreadParams({ id: 42.9, scope: "forum" })).toEqual({
-      message_thread_id: 42,
-    });
+    expect(buildTelegramThreadParams(42.9)).toEqual({ message_thread_id: 42 });
   });
 });
 
@@ -78,7 +68,6 @@ describe("normalizeForwardedContext", () => {
         sender_user: { first_name: "Ada", last_name: "Lovelace", username: "ada", id: 42 },
         date: 123,
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(ctx).not.toBeNull();
     expect(ctx?.from).toBe("Ada Lovelace (@ada)");
@@ -92,7 +81,6 @@ describe("normalizeForwardedContext", () => {
   it("handles hidden forward_origin names", () => {
     const ctx = normalizeForwardedContext({
       forward_origin: { type: "hidden_user", sender_user_name: "Hidden Name", date: 456 },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(ctx).not.toBeNull();
     expect(ctx?.from).toBe("Hidden Name");
@@ -111,7 +99,6 @@ describe("normalizeForwardedContext", () => {
       },
       forward_signature: "Stan",
       forward_date: 789,
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(ctx).not.toBeNull();
     expect(ctx?.from).toBe("OpenClaw Updates (Stan)");
@@ -127,7 +114,6 @@ describe("normalizeForwardedContext", () => {
     const ctx = normalizeForwardedContext({
       forward_sender_name: "Legacy Hidden",
       forward_date: 111,
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(ctx).not.toBeNull();
     expect(ctx?.from).toBe("Legacy Hidden");

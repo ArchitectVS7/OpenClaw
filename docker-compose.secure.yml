@@ -1,0 +1,81 @@
+# Secure Docker Compose configuration for OpenClaw
+# This configuration limits filesystem access to only the workspace directory
+# Use this with: docker compose -f docker-compose.secure.yml up
+
+version: '3.8'
+
+services:
+  openclaw-gateway:
+    image: ${OPENCLAW_IMAGE:-openclaw:local}
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    init: true
+    environment:
+      - NODE_ENV=production
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      - OPENCLAW_GATEWAY_PORT=${OPENCLAW_GATEWAY_PORT:-18789}
+      - OPENCLAW_BRIDGE_PORT=${OPENCLAW_BRIDGE_PORT:-18790}
+      - OPENCLAW_GATEWAY_BIND=${OPENCLAW_GATEWAY_BIND:-loopback}
+
+      # API Keys (passed from .env)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+
+      # Memory optimization
+      - NODE_OPTIONS=--max-old-space-size=512
+
+    ports:
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+      - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
+
+    volumes:
+      # Config directory (read-only recommended, but needs write for QR codes, credentials)
+      - ${OPENCLAW_CONFIG_DIR:-$HOME/.openclaw}:/home/node/.openclaw
+
+      # SECURITY: Only mount workspace directory (limits filesystem access)
+      # Agent can ONLY read/write files in this directory
+      - ${OPENCLAW_WORKSPACE_DIR:-./workspace}:/home/node/.openclaw/workspace
+
+    command: >
+      node dist/index.js gateway
+      --bind ${OPENCLAW_GATEWAY_BIND:-loopback}
+      --port 18789
+
+    # Resource limits to prevent memory issues
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '2'
+        reservations:
+          memory: 512M
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18789/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  openclaw-cli:
+    image: ${OPENCLAW_IMAGE:-openclaw:local}
+    container_name: openclaw-cli
+    profiles: ["cli"]
+    environment:
+      - NODE_ENV=production
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR:-$HOME/.openclaw}:/home/node/.openclaw
+      - ${OPENCLAW_WORKSPACE_DIR:-./workspace}:/home/node/.openclaw/workspace
+    stdin_open: true
+    tty: true
+    command: node dist/index.js --help
+
+networks:
+  default:
+    driver: bridge

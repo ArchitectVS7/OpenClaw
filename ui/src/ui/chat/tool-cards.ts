@@ -13,7 +13,7 @@ export function extractToolCards(message: unknown): ToolCard[] {
   const cards: ToolCard[] = [];
 
   for (const item of content) {
-    const kind = (typeof item.type === "string" ? item.type : "").toLowerCase();
+    const kind = String(item.type ?? "").toLowerCase();
     const isToolCall =
       ["toolcall", "tool_call", "tooluse", "tool_use"].includes(kind) ||
       (typeof item.name === "string" && item.arguments != null);
@@ -27,10 +27,8 @@ export function extractToolCards(message: unknown): ToolCard[] {
   }
 
   for (const item of content) {
-    const kind = (typeof item.type === "string" ? item.type : "").toLowerCase();
-    if (kind !== "toolresult" && kind !== "tool_result") {
-      continue;
-    }
+    const kind = String(item.type ?? "").toLowerCase();
+    if (kind !== "toolresult" && kind !== "tool_result") continue;
     const text = extractToolText(item);
     const name = typeof item.name === "string" ? item.name : "tool";
     cards.push({ kind: "result", name, text });
@@ -81,9 +79,7 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
       @keydown=${
         canClick
           ? (e: KeyboardEvent) => {
-              if (e.key !== "Enter" && e.key !== " ") {
-                return;
-              }
+              if (e.key !== "Enter" && e.key !== " ") return;
               e.preventDefault();
               handleClick?.();
             }
@@ -121,23 +117,15 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
 }
 
 function normalizeContent(content: unknown): Array<Record<string, unknown>> {
-  if (!Array.isArray(content)) {
-    return [];
-  }
+  if (!Array.isArray(content)) return [];
   return content.filter(Boolean) as Array<Record<string, unknown>>;
 }
 
 function coerceArgs(value: unknown): unknown {
-  if (typeof value !== "string") {
-    return value;
-  }
+  if (typeof value !== "string") return value;
   const trimmed = value.trim();
-  if (!trimmed) {
-    return value;
-  }
-  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
-    return value;
-  }
+  if (!trimmed) return value;
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return value;
   try {
     return JSON.parse(trimmed);
   } catch {
@@ -146,11 +134,7 @@ function coerceArgs(value: unknown): unknown {
 }
 
 function extractToolText(item: Record<string, unknown>): string | undefined {
-  if (typeof item.text === "string") {
-    return item.text;
-  }
-  if (typeof item.content === "string") {
-    return item.content;
-  }
+  if (typeof item.text === "string") return item.text;
+  if (typeof item.content === "string") return item.content;
   return undefined;
 }

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { OpenClawApp } from "./app";
 import "../styles.css";
 
-// oxlint-disable-next-line typescript/unbound-method
 const originalConnect = OpenClawApp.prototype.connect;
 
 function mountApp(pathname: string) {
@@ -90,13 +89,13 @@ describe("control UI routing", () => {
 
     expect(window.matchMedia("(max-width: 768px)").matches).toBe(true);
 
-    const split = app.querySelector(".chat-split-container");
+    const split = app.querySelector(".chat-split-container") as HTMLElement | null;
     expect(split).not.toBeNull();
     if (split) {
       expect(getComputedStyle(split).position).not.toBe("fixed");
     }
 
-    const chatMain = app.querySelector(".chat-main");
+    const chatMain = app.querySelector(".chat-main") as HTMLElement | null;
     expect(chatMain).not.toBeNull();
     if (chatMain) {
       expect(getComputedStyle(chatMain).display).not.toBe("none");
@@ -116,11 +115,9 @@ describe("control UI routing", () => {
     const app = mountApp("/chat");
     await app.updateComplete;
 
-    const initialContainer = app.querySelector(".chat-thread");
+    const initialContainer = app.querySelector(".chat-thread") as HTMLElement | null;
     expect(initialContainer).not.toBeNull();
-    if (!initialContainer) {
-      return;
-    }
+    if (!initialContainer) return;
     initialContainer.style.maxHeight = "180px";
     initialContainer.style.overflow = "auto";
 
@@ -135,17 +132,13 @@ describe("control UI routing", () => {
       await nextFrame();
     }
 
-    const container = app.querySelector(".chat-thread");
+    const container = app.querySelector(".chat-thread") as HTMLElement | null;
     expect(container).not.toBeNull();
-    if (!container) {
-      return;
-    }
+    if (!container) return;
     const maxScroll = container.scrollHeight - container.clientHeight;
     expect(maxScroll).toBeGreaterThan(0);
     for (let i = 0; i < 10; i++) {
-      if (container.scrollTop === maxScroll) {
-        break;
-      }
+      if (container.scrollTop === maxScroll) break;
       await nextFrame();
     }
     expect(container.scrollTop).toBe(maxScroll);

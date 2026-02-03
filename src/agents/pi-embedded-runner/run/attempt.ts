@@ -27,6 +27,7 @@ import {
   listChannelSupportedActions,
   resolveChannelMessageToolHints,
 } from "../../channel-tools.js";
+import { createBudgetManagerFromConfig, estimateTextTokens } from "../../context-budget.js";
 import { resolveOpenClawDocsPath } from "../../docs-path.js";
 import { isTimeoutError } from "../../failover-error.js";
 import { resolveModelAuthMode } from "../../model-auth.js";
@@ -46,7 +47,6 @@ import { toClientToolDefinitions } from "../../pi-tool-definition-adapter.js";
 import { createOpenClawCodingTools } from "../../pi-tools.js";
 import { resolveSandboxContext } from "../../sandbox.js";
 import { resolveSandboxRuntimeStatus } from "../../sandbox/runtime-status.js";
-import { repairSessionFileIfNeeded } from "../../session-file-repair.js";
 import { guardSessionManager } from "../../session-tool-result-guard-wrapper.js";
 import { acquireSessionWriteLock } from "../../session-write-lock.js";
 import {
@@ -68,7 +68,11 @@ import {
   sanitizeSessionHistory,
   sanitizeToolsForGoogle,
 } from "../google.js";
-import { getDmHistoryLimitFromSessionKey, limitHistoryTurns } from "../history.js";
+import {
+  getDmHistoryLimitFromSessionKey,
+  limitHistoryByTokens,
+  limitHistoryTurns,
+} from "../history.js";
 import { log } from "../logger.js";
 import { buildModelAliasLines } from "../model.js";
 import {
@@ -400,10 +404,6 @@ export async function runEmbeddedAttempt(
     let sessionManager: ReturnType<typeof guardSessionManager> | undefined;
     let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
     try {
-      await repairSessionFileIfNeeded({
-        sessionFile: params.sessionFile,
-        warn: (message) => log.warn(message),
-      });
       const hadSessionFile = await fs
         .stat(params.sessionFile)
         .then(() => true)
@@ -480,7 +480,7 @@ export async function runEmbeddedAttempt(
         sessionManager,
         settingsManager,
       }));
-      applySystemPromptOverrideToSession(session, systemPromptText);
+      applySystemPromptOverrideToSession(session, systemPromptOverride);
       if (!session) {
         throw new Error("Embedded agent session missing");
       }
@@ -549,10 +549,50 @@ export async function runEmbeddedAttempt(
         const validated = transcriptPolicy.validateAnthropicTurns
           ? validateAnthropicTurns(validatedGemini)
           : validatedGemini;
-        const limited = limitHistoryTurns(
-          validated,
-          getDmHistoryLimitFromSessionKey(params.sessionKey, params.config),
-        );
+
+        // VS7 context management: token-based limiting with budget allocation
+        const contextManagementEnabled =
+          params.config?.agents?.defaults?.contextManagement?.enabled ?? false;
+
+        let limited: typeof validated;
+        if (contextManagementEnabled) {
+          // Use token-based history limiting with budget allocation
+          const budgetManager = createBudgetManagerFromConfig(
+            params.config?.agents?.defaults?.contextManagement,
+          );
+          const contextWindow = params.model.contextWindow ?? 200_000;
+          const systemPromptTokens = estimateTextTokens(systemPromptText);
+          // Estimate bootstrap tokens from context files
+          const bootstrapTokens = contextFiles.reduce(
+            (sum, f) => sum + estimateTextTokens(f.content ?? ""),
+            0,
+          );
+          const historyBudget = budgetManager.computeHistoryBudget({
+            systemPrompt: systemPromptTokens,
+            bootstrap: bootstrapTokens,
+            contextWindow,
+          });
+
+          const windowTurns =
+            params.config?.agents?.defaults?.contextManagement?.rollingSummary?.windowSize ?? 5;
+
+          limited = limitHistoryByTokens(validated, historyBudget, {
+            preserveRecentTurns: windowTurns,
+          });
+
+          log.debug(
+            `context management: contextWindow=${contextWindow} systemPrompt=${systemPromptTokens} ` +
+              `bootstrap=${bootstrapTokens} historyBudget=${historyBudget} ` +
+              `messagesIn=${validated.length} messagesOut=${limited.length}`,
+          );
+        } else {
+          // Fallback to VS6 turn-based limiting
+          limited = limitHistoryTurns(
+            validated,
+            getDmHistoryLimitFromSessionKey(params.sessionKey, params.config),
+          );
+        }
+
         cacheTrace?.recordStage("session:limited", { messages: limited });
         if (limited.length > 0) {
           activeSession.agent.replaceMessages(limited);

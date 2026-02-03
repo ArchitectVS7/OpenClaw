@@ -38,22 +38,16 @@ function buildChannelOptions(props: CronProps): string[] {
   }
   const seen = new Set<string>();
   return options.filter((value) => {
-    if (seen.has(value)) {
-      return false;
-    }
+    if (seen.has(value)) return false;
     seen.add(value);
     return true;
   });
 }
 
 function resolveChannelLabel(props: CronProps, channel: string): string {
-  if (channel === "last") {
-    return "last";
-  }
+  if (channel === "last") return "last";
   const meta = props.channelMeta?.find((entry) => entry.id === channel);
-  if (meta?.label) {
-    return meta.label;
-  }
+  if (meta?.label) return meta.label;
   return props.channelLabels?.[channel] ?? channel;
 }
 
@@ -218,7 +212,8 @@ export function renderCron(props: CronProps) {
 	                    .value=${props.form.channel || "last"}
 	                    @change=${(e: Event) =>
                         props.onFormChange({
-                          channel: (e.target as HTMLSelectElement).value,
+                          channel: (e.target as HTMLSelectElement)
+                            .value as CronFormState["channel"],
                         })}
 	                  >
 	                    ${channelOptions.map(

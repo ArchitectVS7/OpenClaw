@@ -49,7 +49,6 @@ export const dispatchTelegramMessage = async ({
   telegramCfg,
   opts,
   resolveBotTopicsEnabled,
-  // oxlint-disable-next-line typescript/no-explicit-any
 }: any) => {
   const {
     ctxPayload,
@@ -57,7 +56,7 @@ export const dispatchTelegramMessage = async ({
     msg,
     chatId,
     isGroup,
-    threadSpec,
+    replyThreadId,
     historyKey,
     historyLimit,
     groupHistories,
@@ -71,7 +70,8 @@ export const dispatchTelegramMessage = async ({
   } = context;
 
   const isPrivateChat = msg.chat.type === "private";
-  const draftThreadId = threadSpec.id;
+  const messageThreadId = (msg as { message_thread_id?: number }).message_thread_id;
+  const draftThreadId = replyThreadId ?? messageThreadId;
   const draftMaxChars = Math.min(textLimit, 4096);
   const canStreamDraft =
     streamMode !== "off" &&
@@ -84,7 +84,7 @@ export const dispatchTelegramMessage = async ({
         chatId,
         draftId: msg.message_id || Date.now(),
         maxChars: draftMaxChars,
-        thread: threadSpec,
+        messageThreadId: draftThreadId,
         log: logVerbose,
         warn: logVerbose,
       })
@@ -243,7 +243,7 @@ export const dispatchTelegramMessage = async ({
           bot,
           replyToMode,
           textLimit,
-          thread: threadSpec,
+          messageThreadId: replyThreadId,
           tableMode,
           chunkMode,
           onVoiceRecording: sendRecordVoice,
@@ -294,7 +294,7 @@ export const dispatchTelegramMessage = async ({
       bot,
       replyToMode,
       textLimit,
-      thread: threadSpec,
+      messageThreadId: replyThreadId,
       tableMode,
       chunkMode,
       linkPreview: telegramCfg.linkPreview,

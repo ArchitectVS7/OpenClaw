@@ -355,7 +355,7 @@ export const tlonPlugin: ChannelPlugin = {
         } finally {
           await api.delete();
         }
-      } catch (error) {
+      } catch (error: any) {
         return { ok: false, error: error?.message ?? String(error) };
       }
     },

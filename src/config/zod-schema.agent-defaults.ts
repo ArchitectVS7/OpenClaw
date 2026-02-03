@@ -86,6 +86,47 @@ export const AgentDefaultsSchema = z
       })
       .strict()
       .optional(),
+    contextManagement: z
+      .object({
+        enabled: z.boolean().optional(),
+        budget: z
+          .object({
+            systemPromptRatio: z.number().min(0).max(1).optional(),
+            bootstrapRatio: z.number().min(0).max(1).optional(),
+            historyRatio: z.number().min(0).max(1).optional(),
+            responseRatio: z.number().min(0).max(1).optional(),
+            minResponseTokens: z.number().int().positive().optional(),
+          })
+          .strict()
+          .optional(),
+        rollingSummary: z
+          .object({
+            enabled: z.boolean().optional(),
+            windowSize: z.number().int().positive().optional(),
+            summaryMaxTokens: z.number().int().positive().optional(),
+            triggerThreshold: z.number().int().positive().optional(),
+          })
+          .strict()
+          .optional(),
+        semanticHistory: z
+          .object({
+            enabled: z.boolean().optional(),
+            maxRetrievedChunks: z.number().int().positive().optional(),
+            minRelevanceScore: z.number().min(0).max(1).optional(),
+          })
+          .strict()
+          .optional(),
+        proactive: z
+          .object({
+            trimRatio: z.number().min(0).max(1).optional(),
+            aggressiveTrimRatio: z.number().min(0).max(1).optional(),
+            summarizeOnTrim: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
     compaction: z
       .object({
         mode: z.union([z.literal("default"), z.literal("safeguard")]).optional(),
@@ -150,7 +191,6 @@ export const AgentDefaultsSchema = z
               .strict(),
           ])
           .optional(),
-        thinking: z.string().optional(),
       })
       .strict()
       .optional(),

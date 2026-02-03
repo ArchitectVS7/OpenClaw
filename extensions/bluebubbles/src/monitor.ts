@@ -2145,39 +2145,12 @@ async function processMessage(
   };
 
   let sentMessage = false;
-  let streamingActive = false;
-  let typingRestartTimer: NodeJS.Timeout | undefined;
-  const typingRestartDelayMs = 150;
-  const clearTypingRestartTimer = () => {
-    if (typingRestartTimer) {
-      clearTimeout(typingRestartTimer);
-      typingRestartTimer = undefined;
-    }
-  };
-  const restartTypingSoon = () => {
-    if (!streamingActive || !chatGuidForActions || !baseUrl || !password) {
-      return;
-    }
-    clearTypingRestartTimer();
-    typingRestartTimer = setTimeout(() => {
-      typingRestartTimer = undefined;
-      if (!streamingActive) {
-        return;
-      }
-      sendBlueBubblesTyping(chatGuidForActions, true, {
-        cfg: config,
-        accountId: account.accountId,
-      }).catch((err) => {
-        runtime.error?.(`[bluebubbles] typing restart failed: ${String(err)}`);
-      });
-    }, typingRestartDelayMs);
-  };
   try {
     await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
       ctx: ctxPayload,
       cfg: config,
       dispatcherOptions: {
-        deliver: async (payload, info) => {
+        deliver: async (payload) => {
           const rawReplyToId =
             typeof payload.replyToId === "string" ? payload.replyToId.trim() : "";
           // Resolve short ID (e.g., "5") to full UUID
@@ -2212,9 +2185,6 @@ async function processMessage(
               maybeEnqueueOutboundMessageId(result.messageId, cachedBody);
               sentMessage = true;
               statusSink?.({ lastOutboundAt: Date.now() });
-              if (info.kind === "block") {
-                restartTypingSoon();
-              }
             }
             return;
           }
@@ -2250,8 +2220,16 @@ async function processMessage(
             maybeEnqueueOutboundMessageId(result.messageId, chunk);
             sentMessage = true;
             statusSink?.({ lastOutboundAt: Date.now() });
-            if (info.kind === "block") {
-              restartTypingSoon();
+            // In newline mode, restart typing after each chunk if more chunks remain
+            // Small delay allows the Apple API to finish clearing the typing state from message send
+            if (chunkMode === "newline" && i < chunks.length - 1 && chatGuidForActions) {
+              await new Promise((r) => setTimeout(r, 150));
+              sendBlueBubblesTyping(chatGuidForActions, true, {
+                cfg: config,
+                accountId: account.accountId,
+              }).catch(() => {
+                // Ignore typing errors
+              });
             }
           }
         },
@@ -2262,8 +2240,7 @@ async function processMessage(
           if (!baseUrl || !password) {
             return;
           }
-          streamingActive = true;
-          clearTypingRestartTimer();
+          logVerbose(core, runtime, `typing start chatGuid=${chatGuidForActions}`);
           try {
             await sendBlueBubblesTyping(chatGuidForActions, true, {
               cfg: config,
@@ -2280,8 +2257,14 @@ async function processMessage(
           if (!baseUrl || !password) {
             return;
           }
-          // Intentionally no-op for block streaming. We stop typing in finally
-          // after the run completes to avoid flicker between paragraph blocks.
+          try {
+            await sendBlueBubblesTyping(chatGuidForActions, false, {
+              cfg: config,
+              accountId: account.accountId,
+            });
+          } catch (err) {
+            logVerbose(core, runtime, `typing stop failed: ${String(err)}`);
+          }
         },
         onError: (err, info) => {
           runtime.error?.(`BlueBubbles ${info.kind} reply failed: ${String(err)}`);
@@ -2295,10 +2278,6 @@ async function processMessage(
       },
     });
   } finally {
-    const shouldStopTyping =
-      Boolean(chatGuidForActions && baseUrl && password) && (streamingActive || !sentMessage);
-    streamingActive = false;
-    clearTypingRestartTimer();
     if (sentMessage && chatGuidForActions && ackMessageId) {
       core.channel.reactions.removeAckReactionAfterReply({
         removeAfterReply: removeAckAfterReply,
@@ -2322,8 +2301,8 @@ async function processMessage(
         },
       });
     }
-    if (shouldStopTyping) {
-      // Stop typing after streaming completes to avoid a stuck indicator.
+    if (chatGuidForActions && baseUrl && password && !sentMessage) {
+      // Stop typing indicator when no message was sent (e.g., NO_REPLY)
       sendBlueBubblesTyping(chatGuidForActions, false, {
         cfg: config,
         accountId: account.accountId,

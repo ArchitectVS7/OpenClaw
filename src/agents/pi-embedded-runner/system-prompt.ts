@@ -77,15 +77,15 @@ export function buildEmbeddedSystemPrompt(params: {
 export function createSystemPromptOverride(
   systemPrompt: string,
 ): (defaultPrompt?: string) => string {
-  const override = systemPrompt.trim();
-  return (_defaultPrompt?: string) => override;
+  const trimmed = systemPrompt.trim();
+  return () => trimmed;
 }
 
 export function applySystemPromptOverrideToSession(
   session: AgentSession,
-  override: string | ((defaultPrompt?: string) => string),
+  override: (defaultPrompt?: string) => string,
 ) {
-  const prompt = typeof override === "function" ? override() : override.trim();
+  const prompt = override().trim();
   session.agent.setSystemPrompt(prompt);
   const mutableSession = session as unknown as {
     _baseSystemPrompt?: string;

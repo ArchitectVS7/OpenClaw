@@ -128,6 +128,8 @@ export type AgentDefaultsConfig = {
   cliBackends?: Record<string, CliBackendConfig>;
   /** Opt-in: prune old tool results from the LLM context to reduce token usage. */
   contextPruning?: AgentContextPruningConfig;
+  /** VS7: Token-based context management with summarization and semantic retrieval. */
+  contextManagement?: ContextManagementConfig;
   /** Compaction tuning and pre-compaction memory flush behavior. */
   compaction?: AgentCompactionConfig;
   /** Vector memory search configuration (per-agent overrides supported). */
@@ -204,8 +206,6 @@ export type AgentDefaultsConfig = {
     archiveAfterMinutes?: number;
     /** Default model selection for spawned sub-agents (string or {primary,fallbacks}). */
     model?: string | { primary?: string; fallbacks?: string[] };
-    /** Default thinking level for spawned sub-agents (e.g. "off", "low", "medium", "high"). */
-    thinking?: string;
   };
   /** Optional sandbox settings for non-main sessions. */
   sandbox?: {
@@ -261,4 +261,89 @@ export type AgentCompactionMemoryFlushConfig = {
   prompt?: string;
   /** System prompt appended for the memory flush turn. */
   systemPrompt?: string;
+};
+
+/**
+ * Configuration for context budget allocation.
+ * Controls how the model's context window is divided between
+ * system prompt, bootstrap files, history, and response.
+ */
+export type ContextBudgetConfig = {
+  /** Ratio of context window for system prompt (default: 0.15). */
+  systemPromptRatio?: number;
+  /** Ratio of context window for bootstrap files (default: 0.10). */
+  bootstrapRatio?: number;
+  /** Ratio of context window for conversation history (default: 0.45). */
+  historyRatio?: number;
+  /** Ratio of context window for model response (default: 0.20). */
+  responseRatio?: number;
+  /** Minimum tokens reserved for response (default: 4096). */
+  minResponseTokens?: number;
+};
+
+/**
+ * Configuration for rolling conversation summarization.
+ */
+export type RollingSummaryConfig = {
+  /** Enable rolling summarization (default: false). */
+  enabled?: boolean;
+  /** Number of recent user turns to keep verbatim (default: 5). */
+  windowSize?: number;
+  /** Max tokens for the summary text (default: 2000). */
+  summaryMaxTokens?: number;
+  /** Summarize when history exceeds this many tokens (default: 30000). */
+  triggerThreshold?: number;
+};
+
+/**
+ * Configuration for semantic history retrieval.
+ */
+export type SemanticHistoryConfig = {
+  /** Enable semantic history retrieval (default: false). */
+  enabled?: boolean;
+  /** Maximum number of retrieved chunks (default: 5). */
+  maxRetrievedChunks?: number;
+  /** Minimum relevance score (0-1) to include a result (default: 0.6). */
+  minRelevanceScore?: number;
+};
+
+/**
+ * Configuration for proactive context management.
+ */
+export type ProactiveContextConfig = {
+  /** Context ratio at which soft trimming begins (default: 0.5). */
+  trimRatio?: number;
+  /** Context ratio at which aggressive trimming begins (default: 0.7). */
+  aggressiveTrimRatio?: number;
+  /** Summarize before dropping messages (default: true). */
+  summarizeOnTrim?: boolean;
+};
+
+/**
+ * VS7 Context Management configuration.
+ *
+ * Controls token budget allocation, rolling summarization,
+ * semantic history retrieval, and proactive context management.
+ *
+ * When enabled, this replaces turn-based history limiting with
+ * token-based management for more accurate context control.
+ */
+export type ContextManagementConfig = {
+  /**
+   * Master switch for context management (default: false).
+   * When false, falls back to VS6 turn-based history limiting.
+   */
+  enabled?: boolean;
+
+  /** Token budget allocation configuration. */
+  budget?: ContextBudgetConfig;
+
+  /** Rolling conversation summarization. */
+  rollingSummary?: RollingSummaryConfig;
+
+  /** Semantic history retrieval using memory index. */
+  semanticHistory?: SemanticHistoryConfig;
+
+  /** Proactive context management thresholds. */
+  proactive?: ProactiveContextConfig;
 };

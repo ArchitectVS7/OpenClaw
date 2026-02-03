@@ -180,13 +180,9 @@ describeLive("memory plugin live tests", () => {
     const liveApiKey = process.env.OPENAI_API_KEY ?? "";
 
     // Mock plugin API
-    // oxlint-disable-next-line typescript/no-explicit-any
     const registeredTools: any[] = [];
-    // oxlint-disable-next-line typescript/no-explicit-any
     const registeredClis: any[] = [];
-    // oxlint-disable-next-line typescript/no-explicit-any
     const registeredServices: any[] = [];
-    // oxlint-disable-next-line typescript/no-explicit-any
     const registeredHooks: Record<string, any[]> = {};
     const logs: string[] = [];
 
@@ -211,19 +207,15 @@ describeLive("memory plugin live tests", () => {
         error: (msg: string) => logs.push(`[error] ${msg}`),
         debug: (msg: string) => logs.push(`[debug] ${msg}`),
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
       registerTool: (tool: any, opts: any) => {
         registeredTools.push({ tool, opts });
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
       registerCli: (registrar: any, opts: any) => {
         registeredClis.push({ registrar, opts });
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
       registerService: (service: any) => {
         registeredServices.push(service);
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
       on: (hookName: string, handler: any) => {
         if (!registeredHooks[hookName]) {
           registeredHooks[hookName] = [];
@@ -234,7 +226,6 @@ describeLive("memory plugin live tests", () => {
     };
 
     // Register plugin
-    // oxlint-disable-next-line typescript/no-explicit-any
     memoryPlugin.register(mockApi as any);
 
     // Check registration

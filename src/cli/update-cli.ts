@@ -29,7 +29,6 @@ import {
 import {
   detectGlobalInstallManagerByPresence,
   detectGlobalInstallManagerForRoot,
-  cleanupGlobalRenameDirs,
   globalInstallArgs,
   resolveGlobalPackageRoot,
   type GlobalInstallManager,
@@ -737,12 +736,6 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
       (pkgRoot ? await readPackageName(pkgRoot) : await readPackageName(root)) ??
       DEFAULT_PACKAGE_NAME;
     const beforeVersion = pkgRoot ? await readPackageVersion(pkgRoot) : null;
-    if (pkgRoot) {
-      await cleanupGlobalRenameDirs({
-        globalRoot: path.dirname(pkgRoot),
-        packageName,
-      });
-    }
     const updateStep = await runUpdateStep({
       name: "global update",
       argv: globalInstallArgs(manager, `${packageName}@${tag}`),

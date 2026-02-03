@@ -51,7 +51,7 @@ import {
   describeReplyTarget,
   extractTelegramLocation,
   hasBotMention,
-  resolveTelegramThreadSpec,
+  resolveTelegramForumThreadId,
 } from "./bot/helpers.js";
 
 type TelegramMediaRef = {
@@ -158,13 +158,11 @@ export const buildTelegramMessageContext = async ({
   const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
   const messageThreadId = (msg as { message_thread_id?: number }).message_thread_id;
   const isForum = (msg.chat as { is_forum?: boolean }).is_forum === true;
-  const threadSpec = resolveTelegramThreadSpec({
-    isGroup,
+  const resolvedThreadId = resolveTelegramForumThreadId({
     isForum,
     messageThreadId,
   });
-  const resolvedThreadId = threadSpec.scope === "forum" ? threadSpec.id : undefined;
-  const replyThreadId = threadSpec.id;
+  const replyThreadId = isGroup ? resolvedThreadId : messageThreadId;
   const { groupConfig, topicConfig } = resolveTelegramGroupConfig(chatId, resolvedThreadId);
   const peerId = isGroup ? buildTelegramGroupPeerId(chatId, resolvedThreadId) : String(chatId);
   const route = resolveAgentRoute({
@@ -177,8 +175,8 @@ export const buildTelegramMessageContext = async ({
     },
   });
   const baseSessionKey = route.sessionKey;
-  // DMs: use raw messageThreadId for thread sessions (not forum topic ids)
-  const dmThreadId = threadSpec.scope === "dm" ? threadSpec.id : undefined;
+  // DMs: use raw messageThreadId for thread sessions (not resolvedThreadId which is for forums)
+  const dmThreadId = !isGroup ? messageThreadId : undefined;
   const threadKeys =
     dmThreadId != null
       ? resolveThreadSessionKeys({ baseSessionKey, threadId: String(dmThreadId) })
@@ -623,8 +621,8 @@ export const buildTelegramMessageContext = async ({
     Sticker: allMedia[0]?.stickerMetadata,
     ...(locationData ? toLocationContext(locationData) : undefined),
     CommandAuthorized: commandAuthorized,
-    // For groups: use resolved forum topic id; for DMs: use raw messageThreadId
-    MessageThreadId: threadSpec.id,
+    // For groups: use resolvedThreadId (forum topics only); for DMs: use raw messageThreadId
+    MessageThreadId: isGroup ? resolvedThreadId : messageThreadId,
     IsForum: isForum,
     // Originating channel for reply routing.
     OriginatingChannel: "telegram" as const,
@@ -677,7 +675,6 @@ export const buildTelegramMessageContext = async ({
     chatId,
     isGroup,
     resolvedThreadId,
-    threadSpec,
     replyThreadId,
     isForum,
     historyKey,

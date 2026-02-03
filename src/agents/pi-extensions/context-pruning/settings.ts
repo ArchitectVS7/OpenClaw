@@ -45,12 +45,21 @@ export type EffectiveContextPruningSettings = {
   };
 };
 
+/**
+ * Default context pruning settings.
+ *
+ * VS7 Update: Increased softTrimRatio from 0.3 to 0.5 and hardClearRatio
+ * from 0.5 to 0.7 to trigger pruning earlier and more aggressively,
+ * preventing context window overflow before it happens.
+ */
 export const DEFAULT_CONTEXT_PRUNING_SETTINGS: EffectiveContextPruningSettings = {
   mode: "cache-ttl",
   ttlMs: 5 * 60 * 1000,
   keepLastAssistants: 3,
-  softTrimRatio: 0.3,
-  hardClearRatio: 0.5,
+  // VS7: Trigger soft trimming at 50% context usage (was 30%)
+  softTrimRatio: 0.5,
+  // VS7: Trigger hard clearing at 70% context usage (was 50%)
+  hardClearRatio: 0.7,
   minPrunableToolChars: 50_000,
   tools: {},
   softTrim: {

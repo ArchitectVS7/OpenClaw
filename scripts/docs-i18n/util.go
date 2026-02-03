@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	workflowVersion = 15
+	workflowVersion = 9
 	providerName    = "pi"
 	modelVersion    = "claude-opus-4-5"
 )

@@ -19,9 +19,6 @@ Welcome to the lobster tank! 🦞
 - **Jos** - Telegram, API, Nix mode
   - GitHub: [@joshp123](https://github.com/joshp123) · X: [@jjpcodes](https://x.com/jjpcodes)
 
-- **Christoph Nakazawa** - JS Infra
-  - GitHub: [@cpojer](https://github.com/cpojer) · X: [@cnakazawa](https://x.com/cnakazawa)
-
 ## How to Contribute
 
 1. **Bugs & small fixes** → Open a PR!
@@ -31,7 +28,7 @@ Welcome to the lobster tank! 🦞
 ## Before You PR
 
 - Test locally with your OpenClaw instance
-- Run tests: `pnpm build && pnpm check && pnpm test`
+- Run tests: `pnpm tsgo && pnpm format && pnpm lint && pnpm build && pnpm test`
 - Keep PRs focused (one thing per PR)
 - Describe what & why
 
