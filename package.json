@@ -253,8 +253,8 @@
       "@napi-rs/canvas",
       "@whiskeysockets/baileys",
       "authenticate-pam",
+      "core-js",
       "esbuild",
-      "node-llama-cpp",
       "protobufjs",
       "sharp"
     ]
