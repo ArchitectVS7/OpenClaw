@@ -1,0 +1,38 @@
+{
+  "id": "2.4",
+  "name": "Code Review",
+  "category": "code-quality",
+  "description": "Tests ability to review code, identify issues, and provide improvements",
+  "turns": [
+    {
+      "number": 1,
+      "prompt": "Review this Python code and identify all issues:\n\n```python\ndef process_users(users):\n    result = []\n    for i in range(len(users)):\n        user = users[i]\n        if user['status'] == 'active':\n            user['processed'] = True\n            result.append(user)\n    return result\n\ndef get_user_by_email(users, email):\n    for user in users:\n        if user['email'] == email:\n            return user\n    return None\n\ndef calculate_total(items):\n    total = 0\n    for item in items:\n        total = total + item['price'] * item['quantity']\n    return total\n```",
+      "expectedBehavior": "Identifies issues: range(len()) anti-pattern, mutating input dict, no type hints, inefficient linear search, no None handling"
+    },
+    {
+      "number": 2,
+      "prompt": "Fix all the issues you identified while maintaining the same functionality.",
+      "expectedBehavior": "Rewrites code with: enumerate or direct iteration, dict copy, type hints, considers dict lookup for get_user_by_email"
+    },
+    {
+      "number": 3,
+      "prompt": "Now add comprehensive docstrings and unit tests for all three functions.",
+      "expectedBehavior": "Adds docstrings with params/returns, creates pytest tests covering normal cases and edge cases"
+    }
+  ],
+  "successCriteria": {
+    "taskCompleted": {
+      "description": "Issues identified, code fixed, docstrings and tests added",
+      "validation": "All three tasks completed with reasonable quality"
+    },
+    "contextRetained": {
+      "description": "Fixes address specific issues from Turn 1, tests cover the fixed implementation",
+      "validation": "Turn 2 fixes match Turn 1 critique, Turn 3 tests use Turn 2 code"
+    },
+    "codeWorks": {
+      "description": "Fixed code is valid Python, tests would pass",
+      "validation": "python -m py_compile passes, pytest tests are syntactically valid"
+    }
+  },
+  "estimatedDuration": "5-7 minutes"
+}

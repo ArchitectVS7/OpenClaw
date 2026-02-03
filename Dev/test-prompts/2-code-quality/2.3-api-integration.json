@@ -1,0 +1,38 @@
+{
+  "id": "2.3",
+  "name": "API Integration",
+  "category": "code-quality",
+  "description": "Tests ability to create a complete API client with error handling and retry logic",
+  "turns": [
+    {
+      "number": 1,
+      "prompt": "Create a TypeScript API client for a weather service. The base URL is https://api.weather.example/v1. It should have methods: getWeather(city: string) and getForecast(city: string, days: number). Include proper error handling.",
+      "expectedBehavior": "Creates WeatherClient class/module with both methods, uses fetch or axios, has try/catch blocks"
+    },
+    {
+      "number": 2,
+      "prompt": "Add retry logic - if a request fails with a 5xx error, retry up to 3 times with exponential backoff starting at 1 second.",
+      "expectedBehavior": "Adds retry wrapper or modifies methods to include retry logic with correct backoff (1s, 2s, 4s)"
+    },
+    {
+      "number": 3,
+      "prompt": "Now add rate limiting - max 10 requests per minute. Queue requests if limit is reached.",
+      "expectedBehavior": "Implements rate limiter using token bucket or sliding window, queues excess requests"
+    }
+  ],
+  "successCriteria": {
+    "taskCompleted": {
+      "description": "API client with retry logic and rate limiting implemented",
+      "validation": "All three features present: basic client, retry, rate limiting"
+    },
+    "contextRetained": {
+      "description": "Each turn builds on previous - retry wraps original methods, rate limiter applies to retried requests",
+      "validation": "Final code is cohesive, not three separate implementations"
+    },
+    "codeWorks": {
+      "description": "TypeScript compiles, logic is sound (backoff math correct, rate limit tracks correctly)",
+      "validation": "tsc passes, review backoff timing logic"
+    }
+  },
+  "estimatedDuration": "5-7 minutes"
+}

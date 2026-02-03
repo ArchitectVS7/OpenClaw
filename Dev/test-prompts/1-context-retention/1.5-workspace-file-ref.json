@@ -1,0 +1,38 @@
+{
+  "id": "1.5",
+  "name": "Workspace File Reference",
+  "category": "context-retention",
+  "description": "Tests if agent can reference and work with files mentioned earlier in conversation",
+  "turns": [
+    {
+      "number": 1,
+      "prompt": "I have a project with these files: src/index.ts (entry point), src/utils/helpers.ts (utility functions), src/models/user.ts (User class), and package.json. The User class has properties: id, name, email, and a method validate().",
+      "expectedBehavior": "Acknowledges project structure, may ask clarifying questions about the project"
+    },
+    {
+      "number": 2,
+      "prompt": "Add a new method to the User class called toJSON() that returns the user data as a plain object.",
+      "expectedBehavior": "Writes toJSON method for User class, references correct file path src/models/user.ts"
+    },
+    {
+      "number": 3,
+      "prompt": "Now update the entry point to create a user, validate it, and log the JSON output.",
+      "expectedBehavior": "Updates src/index.ts, imports from correct paths, uses User class with validate() and new toJSON() methods"
+    }
+  ],
+  "successCriteria": {
+    "taskCompleted": {
+      "description": "toJSON method added to User class, index.ts updated with usage",
+      "validation": "Both code snippets provided with correct file references"
+    },
+    "contextRetained": {
+      "description": "Uses exact file paths from Turn 1, references User properties (id, name, email) and methods",
+      "validation": "Code uses src/models/user.ts and src/index.ts, includes validate() call"
+    },
+    "codeWorks": {
+      "description": "TypeScript syntax valid, imports resolve correctly",
+      "validation": "tsc compilation would pass (no syntax errors)"
+    }
+  },
+  "estimatedDuration": "3-4 minutes"
+}

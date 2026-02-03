@@ -1,0 +1,48 @@
+{
+  "id": "3.4",
+  "name": "Emergency Interrupt",
+  "category": "mixed-workload",
+  "description": "Tests context preservation when urgent unrelated task interrupts ongoing work",
+  "turns": [
+    {
+      "number": 1,
+      "prompt": "I'm refactoring our payment processing module. It currently uses Stripe. I want to abstract it to support multiple providers. Let's plan the interface.",
+      "expectedBehavior": "Proposes PaymentProvider interface with methods like charge, refund, getTransaction"
+    },
+    {
+      "number": 2,
+      "prompt": "Good start. The interface should also handle subscription management - create, cancel, and update subscription.",
+      "expectedBehavior": "Extends interface with subscription methods, maintains previous charge/refund methods"
+    },
+    {
+      "number": 3,
+      "prompt": "URGENT: Production is down! Getting this error in logs: 'Connection refused: Redis cluster node at 10.0.1.5:6379'. What should I check?",
+      "expectedBehavior": "Switches to emergency mode: suggests checking Redis node health, network connectivity, cluster status, failover"
+    },
+    {
+      "number": 4,
+      "prompt": "Found it - one Redis node was OOM killed. Restarted it and prod is back. What should I do to prevent this?",
+      "expectedBehavior": "Suggests: memory limits, monitoring/alerts, cluster redundancy, connection pooling settings"
+    },
+    {
+      "number": 5,
+      "prompt": "Thanks! Now back to the payment provider interface - where were we? Write the TypeScript interface with everything we discussed.",
+      "expectedBehavior": "Returns to payment context, creates TypeScript interface with both payment AND subscription methods from Turns 1-2"
+    }
+  ],
+  "successCriteria": {
+    "taskCompleted": {
+      "description": "Payment interface planned, Redis emergency resolved, interface code written",
+      "validation": "All contexts addressed appropriately"
+    },
+    "contextRetained": {
+      "description": "Turn 5 includes BOTH payment methods (Turn 1) AND subscription methods (Turn 2)",
+      "validation": "Interface has: charge, refund, getTransaction, createSubscription, cancelSubscription, updateSubscription"
+    },
+    "codeWorks": {
+      "description": "TypeScript interface is valid syntax",
+      "validation": "tsc would accept the interface definition"
+    }
+  },
+  "estimatedDuration": "5-7 minutes"
+}

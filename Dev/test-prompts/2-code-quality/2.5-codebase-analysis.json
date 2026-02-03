@@ -1,0 +1,38 @@
+{
+  "id": "2.5",
+  "name": "Codebase Analysis",
+  "category": "code-quality",
+  "description": "Tests ability to understand codebase structure and make informed recommendations",
+  "turns": [
+    {
+      "number": 1,
+      "prompt": "I have a Node.js Express app with this structure:\n\n```\nsrc/\n  app.js (main entry, 500 lines)\n  routes/ (15 route files, avg 200 lines each)\n  models/ (8 Mongoose models)\n  middleware/ (3 files: auth.js, logging.js, errorHandler.js)\n  utils/ (misc helpers, some duplicated logic)\n  config/ (env-based configuration)\nNo tests, no TypeScript, some routes mix business logic with HTTP handling.\n```\n\nWhat are the top 5 issues with this codebase?",
+      "expectedBehavior": "Identifies: large files, no tests, no TypeScript, business logic in routes, duplicated utils"
+    },
+    {
+      "number": 2,
+      "prompt": "Create a refactoring plan to address these issues. Prioritize by impact and effort.",
+      "expectedBehavior": "Creates prioritized plan, likely: add tests first, extract services from routes, consolidate utils, TypeScript migration last"
+    },
+    {
+      "number": 3,
+      "prompt": "Show me what extracting business logic from one route file would look like. Use a user registration route as an example.",
+      "expectedBehavior": "Shows before/after: route file imports service, service handles validation/DB/email, route only handles HTTP"
+    }
+  ],
+  "successCriteria": {
+    "taskCompleted": {
+      "description": "Issues identified, refactoring plan created, example extraction shown",
+      "validation": "All three deliverables provided"
+    },
+    "contextRetained": {
+      "description": "Plan addresses Turn 1 issues, example follows plan structure (uses services pattern)",
+      "validation": "Coherent progression from analysis to plan to implementation"
+    },
+    "codeWorks": {
+      "description": "Example code is valid JavaScript/Node, follows Express conventions",
+      "validation": "Service and route code would work together"
+    }
+  },
+  "estimatedDuration": "5-7 minutes"
+}

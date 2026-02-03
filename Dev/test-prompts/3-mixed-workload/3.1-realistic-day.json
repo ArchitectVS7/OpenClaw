@@ -1,0 +1,53 @@
+{
+  "id": "3.1",
+  "name": "Realistic Day Workflow",
+  "category": "mixed-workload",
+  "description": "Simulates a typical developer day with varied tasks and context switches",
+  "turns": [
+    {
+      "number": 1,
+      "prompt": "Good morning! I'm working on a React e-commerce app today. First task: the shopping cart isn't persisting between page refreshes. Any quick ideas?",
+      "expectedBehavior": "Suggests localStorage, sessionStorage, or state management solutions for cart persistence"
+    },
+    {
+      "number": 2,
+      "prompt": "Good idea, let's use localStorage. Write the hook for that.",
+      "expectedBehavior": "Creates useLocalStorage or usePersistedCart hook with proper serialization"
+    },
+    {
+      "number": 3,
+      "prompt": "Quick detour - my teammate needs help. What's the difference between useCallback and useMemo?",
+      "expectedBehavior": "Explains: useCallback memoizes functions, useMemo memoizes values, gives examples"
+    },
+    {
+      "number": 4,
+      "prompt": "Back to my cart. The hook works but I need to also sync it with the backend API when the user is logged in. How should I modify it?",
+      "expectedBehavior": "Suggests combining localStorage with API sync, may use useEffect for sync, references the hook from Turn 2"
+    },
+    {
+      "number": 5,
+      "prompt": "Perfect. Now completely different topic - I need to write a bash script to backup our PostgreSQL database daily. Can you help?",
+      "expectedBehavior": "Writes pg_dump script with date formatting, compression, retention policy"
+    },
+    {
+      "number": 6,
+      "prompt": "Last thing - summarize what we worked on today.",
+      "expectedBehavior": "Lists: cart persistence hook, useCallback/useMemo explanation, cart API sync, database backup script"
+    }
+  ],
+  "successCriteria": {
+    "taskCompleted": {
+      "description": "All 6 tasks addressed: hook, explanation, hook modification, backup script, summary",
+      "validation": "Each turn produces relevant output"
+    },
+    "contextRetained": {
+      "description": "Turn 4 builds on Turn 2 hook, Turn 6 accurately summarizes all topics",
+      "validation": "Summary includes all 4 distinct topics discussed"
+    },
+    "codeWorks": {
+      "description": "React hook is valid JSX/TS, bash script uses correct pg_dump syntax",
+      "validation": "Both code snippets are syntactically valid"
+    }
+  },
+  "estimatedDuration": "6-8 minutes"
+}

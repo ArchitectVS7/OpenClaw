@@ -1,0 +1,53 @@
+{
+  "id": "3.5",
+  "name": "Knowledge Synthesis",
+  "category": "mixed-workload",
+  "description": "Tests ability to gather requirements across turns and synthesize into coherent solution",
+  "turns": [
+    {
+      "number": 1,
+      "prompt": "I'm designing a notification system. First constraint: it needs to support email, SMS, and push notifications.",
+      "expectedBehavior": "Acknowledges multi-channel requirement, may ask about volume or priority"
+    },
+    {
+      "number": 2,
+      "prompt": "Second constraint: notifications must be sent asynchronously - users shouldn't wait for delivery.",
+      "expectedBehavior": "Notes async requirement, likely suggests message queue (RabbitMQ, SQS, Redis)"
+    },
+    {
+      "number": 3,
+      "prompt": "Third constraint: we need delivery tracking and retry logic for failed sends.",
+      "expectedBehavior": "Notes tracking/retry needs, may suggest dead letter queue, status table"
+    },
+    {
+      "number": 4,
+      "prompt": "Fourth constraint: users can set preferences - which channels they want and quiet hours.",
+      "expectedBehavior": "Notes user preferences requirement, suggests user_notification_preferences table"
+    },
+    {
+      "number": 5,
+      "prompt": "Now synthesize all four constraints into a system design. Include: architecture diagram (text-based), key components, and data flow.",
+      "expectedBehavior": "Creates comprehensive design incorporating ALL constraints: multi-channel (1), async/queue (2), tracking/retry (3), user preferences (4)"
+    },
+    {
+      "number": 6,
+      "prompt": "Write the core NotificationService class in Python that implements this design.",
+      "expectedBehavior": "Creates class that: selects channels based on preferences, queues async, tracks delivery, handles retries"
+    }
+  ],
+  "successCriteria": {
+    "taskCompleted": {
+      "description": "Design synthesizes all 4 constraints, code implements the design",
+      "validation": "Turn 5 mentions all constraints, Turn 6 code reflects design"
+    },
+    "contextRetained": {
+      "description": "Turn 5 explicitly addresses: email/SMS/push, async, tracking/retry, preferences",
+      "validation": "All 4 constraints appear in architecture description"
+    },
+    "codeWorks": {
+      "description": "Python class is syntactically valid, has methods for key operations",
+      "validation": "python -m py_compile passes"
+    }
+  },
+  "estimatedDuration": "7-10 minutes"
+}

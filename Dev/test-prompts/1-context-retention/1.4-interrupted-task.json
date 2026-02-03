@@ -1,0 +1,43 @@
+{
+  "id": "1.4",
+  "name": "Interrupted Task Resumption",
+  "category": "context-retention",
+  "description": "Tests if agent can resume a task after being interrupted with unrelated questions",
+  "turns": [
+    {
+      "number": 1,
+      "prompt": "I need to build a user authentication system. Let's start with the database schema - I want to store users with email, hashed password, and created_at timestamp. What tables do I need?",
+      "expectedBehavior": "Proposes users table schema with the requested fields, may suggest additional fields like id, updated_at"
+    },
+    {
+      "number": 2,
+      "prompt": "Actually, quick question - what's the capital of France?",
+      "expectedBehavior": "Answers 'Paris' without losing context of the auth system discussion"
+    },
+    {
+      "number": 3,
+      "prompt": "And what's 2 + 2?",
+      "expectedBehavior": "Answers '4' - another interruption"
+    },
+    {
+      "number": 4,
+      "prompt": "OK back to the auth system - now write the SQL to create that table and also the login function that validates credentials.",
+      "expectedBehavior": "Returns to auth context, creates SQL for users table matching Turn 1 spec, writes login function that queries that table"
+    }
+  ],
+  "successCriteria": {
+    "taskCompleted": {
+      "description": "SQL table creation and login function both provided",
+      "validation": "Check for CREATE TABLE and function/method that validates credentials"
+    },
+    "contextRetained": {
+      "description": "Turn 4 references the exact fields from Turn 1 (email, hashed password, created_at)",
+      "validation": "SQL includes all three fields, login function uses email for lookup"
+    },
+    "codeWorks": {
+      "description": "SQL syntax valid, login function has proper password comparison logic",
+      "validation": "SQL parses, function includes hash comparison"
+    }
+  },
+  "estimatedDuration": "3-4 minutes"
+}

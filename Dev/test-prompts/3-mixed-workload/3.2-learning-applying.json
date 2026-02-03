@@ -1,0 +1,48 @@
+{
+  "id": "3.2",
+  "name": "Learning and Applying",
+  "category": "mixed-workload",
+  "description": "Tests if agent can teach a concept and then help apply it correctly",
+  "turns": [
+    {
+      "number": 1,
+      "prompt": "Explain the Repository Pattern in software architecture. Keep it practical - what problem does it solve?",
+      "expectedBehavior": "Explains Repository Pattern: abstracts data access, makes code testable, decouples business logic from DB"
+    },
+    {
+      "number": 2,
+      "prompt": "What are the key methods a repository typically has?",
+      "expectedBehavior": "Lists: find/findById, findAll, create, update, delete (CRUD operations), may mention query methods"
+    },
+    {
+      "number": 3,
+      "prompt": "Now help me implement a UserRepository in Python. I'm using SQLAlchemy with a PostgreSQL database.",
+      "expectedBehavior": "Creates UserRepository class following pattern from Turns 1-2, uses SQLAlchemy session, has CRUD methods"
+    },
+    {
+      "number": 4,
+      "prompt": "Add a method to find users by email domain (e.g., all users with @company.com emails).",
+      "expectedBehavior": "Adds find_by_email_domain method to UserRepository, uses LIKE or endswith query"
+    },
+    {
+      "number": 5,
+      "prompt": "Now write a unit test for that new method using pytest and mocking.",
+      "expectedBehavior": "Creates pytest test with mocked session, tests find_by_email_domain, uses assertions"
+    }
+  ],
+  "successCriteria": {
+    "taskCompleted": {
+      "description": "Pattern explained, repository implemented, custom method added, test written",
+      "validation": "All 5 turns produce appropriate output"
+    },
+    "contextRetained": {
+      "description": "Repository implementation follows explained pattern, test tests the actual method from Turn 4",
+      "validation": "Methods in Turn 3 match Turn 2 list, test imports and tests find_by_email_domain"
+    },
+    "codeWorks": {
+      "description": "Python/SQLAlchemy code valid, test would run with pytest",
+      "validation": "python -m py_compile passes for both files"
+    }
+  },
+  "estimatedDuration": "5-7 minutes"
+}

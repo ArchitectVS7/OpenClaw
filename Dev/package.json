@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "test:manual": "tsx src/test-runner.ts",
+    "batch": "tsx src/batch-runner.ts",
+    "dual": "tsx src/dual-runner.ts",
     "compare": "tsx src/compare-results.ts",
     "build": "tsc"
   },

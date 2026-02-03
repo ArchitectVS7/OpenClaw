@@ -1,0 +1,73 @@
+{
+  "id": "3.3",
+  "name": "Long Conversation",
+  "category": "mixed-workload",
+  "description": "Stress test with 10 turns to measure context drift over extended conversation",
+  "turns": [
+    {
+      "number": 1,
+      "prompt": "I'm building a task management app called 'TaskFlow'. It's a CLI tool in Go. Users can create, list, and complete tasks. Tasks have: id, title, description, priority (1-5), due date, and status.",
+      "expectedBehavior": "Acknowledges TaskFlow specs, may ask clarifying questions about storage or CLI framework"
+    },
+    {
+      "number": 2,
+      "prompt": "Let's start with the Task struct and basic storage. Use a JSON file for persistence.",
+      "expectedBehavior": "Creates Task struct with all 6 fields from Turn 1, adds JSON file read/write functions"
+    },
+    {
+      "number": 3,
+      "prompt": "Now add the 'add' command that creates a new task with title and optional description.",
+      "expectedBehavior": "Implements add command, generates ID, sets default priority/status, calls storage functions"
+    },
+    {
+      "number": 4,
+      "prompt": "Add a 'list' command that shows all tasks sorted by priority.",
+      "expectedBehavior": "Implements list command, sorts by priority field, displays task info"
+    },
+    {
+      "number": 5,
+      "prompt": "What's the current state of our code? Give me a quick summary.",
+      "expectedBehavior": "Summarizes: Task struct, JSON storage, add command, list command. Should mention TaskFlow name."
+    },
+    {
+      "number": 6,
+      "prompt": "Add a 'complete' command that marks a task as done by its ID.",
+      "expectedBehavior": "Implements complete command, finds task by ID, updates status to completed"
+    },
+    {
+      "number": 7,
+      "prompt": "Now add filtering to the list command - allow filtering by status and minimum priority.",
+      "expectedBehavior": "Extends list command with --status and --priority flags, filters results"
+    },
+    {
+      "number": 8,
+      "prompt": "Add a 'delete' command that removes a task by ID.",
+      "expectedBehavior": "Implements delete command, removes task from storage, handles not found case"
+    },
+    {
+      "number": 9,
+      "prompt": "I want to add due date reminders. What's a good approach for the CLI context?",
+      "expectedBehavior": "Suggests approaches: check on list command, separate 'remind' command, or background process"
+    },
+    {
+      "number": 10,
+      "prompt": "Let's wrap up - give me the complete main.go file with all commands we've built.",
+      "expectedBehavior": "Produces complete main.go with: Task struct, JSON storage, add/list/complete/delete commands, filtering"
+    }
+  ],
+  "successCriteria": {
+    "taskCompleted": {
+      "description": "All commands implemented, final main.go is complete and coherent",
+      "validation": "Turn 10 includes all functionality from previous turns"
+    },
+    "contextRetained": {
+      "description": "Consistent throughout: app name 'TaskFlow', all 6 Task fields, Go language, JSON storage",
+      "validation": "Turn 10 uses correct app name, struct matches Turn 1 spec, no language switches"
+    },
+    "codeWorks": {
+      "description": "Final Go code compiles, commands are properly structured",
+      "validation": "go build would succeed (no syntax errors)"
+    }
+  },
+  "estimatedDuration": "12-15 minutes"
+}

@@ -60,6 +60,7 @@ export interface TestResult {
   qualityEvaluation: QualityEvaluation;
   totalTokens: number;
   totalTimeMs: number;
+  model?: string;
 }
 
 /**
@@ -130,4 +131,19 @@ export interface TestConfig {
   openclawBinary: string;
   sessionKey: string;
   outputDir: string;
+  defaultModel?: string;
+}
+
+/**
+ * Dual-instance test session
+ */
+export interface DualTestSession {
+  sessionId: string;
+  startTime: string;
+  testsPlanned: string[];
+  testsCompleted: string[];
+  mainResults: TestResult[];
+  vs7Results: TestResult[];
+  status: 'in_progress' | 'paused' | 'completed';
+  notes: string[];
 }
