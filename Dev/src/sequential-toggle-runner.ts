@@ -563,13 +563,35 @@ async function setVS7Mode(config: RunnerConfig, enabled: boolean): Promise<void>
     // Config doesn't exist, start fresh
   }
 
-  // Set contextManagement.enabled
+  // Set contextManagement config
   if (!openclawConfig.agents) openclawConfig.agents = {};
   if (!openclawConfig.agents.defaults) openclawConfig.agents.defaults = {};
-  if (!openclawConfig.agents.defaults.contextManagement) {
-    openclawConfig.agents.defaults.contextManagement = {};
+
+  if (enabled) {
+    // VS7 MODE: Enable full context management with rollingSummary
+    // Note: semanticHistory disabled - requires OpenAI API key for embeddings
+    openclawConfig.agents.defaults.contextManagement = {
+      enabled: true,
+      budget: {
+        systemPromptRatio: 0.15,
+        bootstrapRatio: 0.1,
+        historyRatio: 0.45,
+        responseRatio: 0.2,
+        minResponseTokens: 4096,
+      },
+      rollingSummary: {
+        enabled: true,
+        windowSize: 3, // Keep last 3 turns verbatim, summarize older
+        summaryMaxTokens: 2000,
+        triggerThreshold: 10000, // Lower threshold for testing (default: 30000)
+      },
+    };
+  } else {
+    // BASELINE: Disable all context management
+    openclawConfig.agents.defaults.contextManagement = {
+      enabled: false,
+    };
   }
-  openclawConfig.agents.defaults.contextManagement.enabled = enabled;
 
   // Disable gateway auth for testing (allow unauthenticated local connections)
   if (!openclawConfig.gateway) openclawConfig.gateway = {};
@@ -581,7 +603,11 @@ async function setVS7Mode(config: RunnerConfig, enabled: boolean): Promise<void>
 
   await fs.mkdir(path.dirname(config.configPath), { recursive: true });
   await fs.writeFile(config.configPath, JSON.stringify(openclawConfig, null, 2));
-  console.log(`  Config: contextManagement.enabled = ${enabled}`);
+  if (enabled) {
+    console.log(`  Config: VS7 enabled with rollingSummary (threshold: 10k, window: 3 turns)`);
+  } else {
+    console.log(`  Config: contextManagement DISABLED (baseline)`);
+  }
 
   // Restart Docker container using docker-compose to preserve environment variables
   console.log(`  Restarting Docker container: ${config.dockerContainer}...`);
@@ -754,9 +780,19 @@ async function loadTestPrompt(testId: string): Promise<TestPrompt> {
  */
 async function loadTestIdsByCategory(category: string): Promise<string[]> {
   const testPromptsDir = path.join(process.cwd(), 'test-prompts');
-  const categoryPath = path.join(testPromptsDir, category);
 
   try {
+    // Find the category directory (may have a numbered prefix like "1-context-retention")
+    const dirs = await fs.readdir(testPromptsDir);
+    const categoryDir = dirs.find(
+      (d) => d === category || d.endsWith(`-${category}`) || d.match(new RegExp(`^\\d+-${category}$`))
+    );
+
+    if (!categoryDir) {
+      throw new Error(`Category ${category} not found. Available: ${dirs.join(', ')}`);
+    }
+
+    const categoryPath = path.join(testPromptsDir, categoryDir);
     const files = await fs.readdir(categoryPath);
     const testIds: string[] = [];
 
@@ -768,7 +804,10 @@ async function loadTestIdsByCategory(category: string): Promise<string[]> {
     }
 
     return testIds.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('not found')) {
+      throw error;
+    }
     throw new Error(`Category ${category} not found`);
   }
 }
