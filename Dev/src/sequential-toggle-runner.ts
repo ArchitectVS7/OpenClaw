@@ -203,7 +203,6 @@ class OpenClawClient {
           },
         };
 
-        console.log(`  Sending connect with device: ${JSON.stringify(connectFrame.params.device).substring(0, 100)}...`);
         this.ws?.send(JSON.stringify(connectFrame));
       };
 
@@ -236,7 +235,6 @@ class OpenClawClient {
               resolve();
             } else {
               clearTimeout(timeout);
-              console.error('  Connect failed:', JSON.stringify(frame.error || frame));
               reject(new Error(frame.error?.message || 'Connect handshake failed'));
             }
             return;
@@ -367,18 +365,35 @@ class OpenClawClient {
         agentId: 'main',
       });
 
-      const sessions = response.result?.sessions || [];
+      const payload = response.result || response.payload;
+      const sessions = payload?.sessions || [];
+
+      // Session keys in the API response have format: "agent:{agentId}:{sessionKey}"
+      // We need to match against either the full key or just the session key portion
       const session = sessions.find(
-        (s: SessionMetadata) => s.sessionKey === this.config.sessionKey
+        (s: SessionMetadata) => {
+          const key = s.sessionKey || s.key; // API might return as 'key' not 'sessionKey'
+          return key === this.config.sessionKey ||
+                 key === `agent:main:${this.config.sessionKey}` ||
+                 key?.endsWith(`:${this.config.sessionKey}`);
+        }
       );
 
       if (session) {
+        // Token fields might be named differently in the API
+        // The session has a nested 'tokens' object with the breakdown
+        const tokens = session.tokens || {};
+        const totalTokens = session.totalTokens ?? tokens.total ?? 0;
+        const inputTokens = session.inputTokens ?? tokens.input ?? 0;
+        const outputTokens = session.outputTokens ?? tokens.output ?? 0;
+        const cacheCreation = session.cacheCreationTokens ?? tokens.cacheCreation ?? 0;
+        const cacheRead = session.cacheReadTokens ?? tokens.cacheRead ?? 0;
         return {
-          total: session.totalTokens || 0,
-          input: session.inputTokens || 0,
-          output: session.outputTokens || 0,
-          cacheCreation: session.cacheCreationTokens,
-          cacheRead: session.cacheReadTokens,
+          total: totalTokens,
+          input: inputTokens,
+          output: outputTokens,
+          cacheCreation: cacheCreation || undefined,
+          cacheRead: cacheRead || undefined,
         };
       }
 
@@ -644,10 +659,28 @@ async function captureWorkspaceFiles(
   try {
     await fs.mkdir(outputDir, { recursive: true });
 
-    // Copy workspace from Docker container
-    await execAsync(
-      `docker cp ${config.dockerContainer}:/home/node/.openclaw/workspace/. "${outputDir}"`
-    );
+    // Use tar to copy workspace, excluding node_modules and other large directories
+    // This avoids Windows symlink permission issues
+    const tarPath = `${outputDir.replace(/\\/g, '/')}/workspace.tar`;
+    try {
+      // First, create a tarball in the container excluding problematic dirs
+      await execAsync(
+        `docker exec ${config.dockerContainer} sh -c "cd /home/node/.openclaw/workspace && tar --exclude='node_modules' --exclude='.git' --exclude='*.lock' --exclude='.pnpm' -cf /tmp/workspace.tar . 2>/dev/null || echo 'tar failed'"`
+      );
+      // Then copy the tarball out
+      await execAsync(
+        `docker cp ${config.dockerContainer}:/tmp/workspace.tar "${tarPath}"`
+      );
+      // Extract locally using Git Bash tar on Windows
+      await execAsync(
+        `tar -xf "${tarPath}" -C "${outputDir.replace(/\\/g, '/')}"`
+      );
+      // Clean up
+      await fs.unlink(tarPath).catch(() => {});
+    } catch (tarError) {
+      // Tar approach failed - workspace may be empty or tar not available
+      console.log('  Note: tar-based capture failed, workspace may be empty');
+    }
 
     // List captured files
     const listFiles = async (dir: string, prefix = ''): Promise<string[]> => {
@@ -956,11 +989,13 @@ async function main(): Promise<void> {
 
     // Run BASELINE first (VS7 OFF)
     await setVS7Mode(config, false);
-    const client = new OpenClawClient(config);
+    // Use unique session key for baseline run
+    const baselineConfig = { ...config, sessionKey: `${config.sessionKey}-baseline-${testId}` };
+    const client = new OpenClawClient(baselineConfig);
 
     try {
       await client.connect();
-      const baselineRun = await runTest(client, test, 'baseline', config, outputDir);
+      const baselineRun = await runTest(client, test, 'baseline', baselineConfig, outputDir);
       allResults.baseline.push(baselineRun);
       await saveTestResult(baselineRun, test, outputDir);
     } finally {
@@ -969,11 +1004,13 @@ async function main(): Promise<void> {
 
     // Run VS7 (Context Management ON)
     await setVS7Mode(config, true);
-    const vs7Client = new OpenClawClient(config);
+    // Use unique session key for VS7 run
+    const vs7Config = { ...config, sessionKey: `${config.sessionKey}-vs7-${testId}` };
+    const vs7Client = new OpenClawClient(vs7Config);
 
     try {
       await vs7Client.connect();
-      const vs7Run = await runTest(vs7Client, test, 'vs7', config, outputDir);
+      const vs7Run = await runTest(vs7Client, test, 'vs7', vs7Config, outputDir);
       allResults.vs7.push(vs7Run);
       await saveTestResult(vs7Run, test, outputDir);
 
