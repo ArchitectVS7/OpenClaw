@@ -147,7 +147,7 @@ You can add custom commands to the menu via config:
 }
 ```
 
-## Troubleshooting
+## Setup troubleshooting (commands)
 
 - `setMyCommands failed` in logs usually means outbound HTTPS/DNS is blocked to `api.telegram.org`.
 - If you see `sendMessage` or `sendChatAction` failures, check IPv6 routing and DNS.
@@ -351,7 +351,7 @@ Use the global setting when all Telegram bots/accounts should behave the same. U
 - Approve via:
   - `openclaw pairing list telegram`
   - `openclaw pairing approve telegram <CODE>`
-- Pairing is the default token exchange used for Telegram DMs. Details: [Pairing](/start/pairing)
+- Pairing is the default token exchange used for Telegram DMs. Details: [Pairing](/channels/pairing)
 - `channels.telegram.allowFrom` accepts numeric user IDs (recommended) or `@username` entries. It is **not** the bot username; use the human sender’s ID. The wizard accepts `@username` and resolves it to the numeric ID when possible.
 
 #### Finding your Telegram user ID
@@ -365,6 +365,7 @@ Alternate (official Bot API):
 
 1. DM your bot.
 2. Fetch updates with your bot token and read `message.from.id`:
+
    ```bash
    curl "https://api.telegram.org/bot<bot_token>/getUpdates"
    ```
