@@ -72,3 +72,19 @@ USER.md
 # local tooling
 .serena/
 .design-docs/
+
+# Agent credentials and memory (NEVER COMMIT)
+/memory/
+.agent/*.json
+!.agent/workflows/
+local/
+
+# OpenClaw runtime data (stored outside repo in C:\dev\Utils\openclaw-data)
+data/
+
+# User-specific launcher scripts (stored in C:\dev\Utils\openclaw-scripts or Desktop)
+*.ps1
+*.bat
+
+# VS7 quarantine folder - recovered code pending review/integration
+/VS7/
