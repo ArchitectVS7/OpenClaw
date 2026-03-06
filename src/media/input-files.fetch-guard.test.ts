@@ -1,9 +1,19 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchWithSsrFGuardMock = vi.fn();
+const convertHeicToJpegMock = vi.fn();
+const detectMimeMock = vi.fn();
 
 vi.mock("../infra/net/fetch-guard.js", () => ({
   fetchWithSsrFGuard: (...args: unknown[]) => fetchWithSsrFGuardMock(...args),
+}));
+
+vi.mock("./image-ops.js", () => ({
+  convertHeicToJpeg: (...args: unknown[]) => convertHeicToJpegMock(...args),
+}));
+
+vi.mock("./mime.js", () => ({
+  detectMime: (...args: unknown[]) => detectMimeMock(...args),
 }));
 
 async function waitForMicrotaskTurn(): Promise<void> {
@@ -17,6 +27,102 @@ let extractFileContentFromSource: typeof import("./input-files.js").extractFileC
 beforeAll(async () => {
   ({ fetchWithGuard, extractImageContentFromSource, extractFileContentFromSource } =
     await import("./input-files.js"));
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("HEIC input image normalization", () => {
+  it("converts base64 HEIC images to JPEG before returning them", async () => {
+    const normalized = Buffer.from("jpeg-normalized");
+    detectMimeMock.mockResolvedValueOnce("image/heic");
+    convertHeicToJpegMock.mockResolvedValueOnce(normalized);
+
+    const image = await extractImageContentFromSource(
+      {
+        type: "base64",
+        data: Buffer.from("heic-source").toString("base64"),
+        mediaType: "image/heic",
+      },
+      {
+        allowUrl: false,
+        allowedMimes: new Set(["image/heic", "image/jpeg"]),
+        maxBytes: 1024 * 1024,
+        maxRedirects: 0,
+        timeoutMs: 1,
+      },
+    );
+
+    expect(convertHeicToJpegMock).toHaveBeenCalledTimes(1);
+    expect(image).toEqual({
+      type: "image",
+      data: normalized.toString("base64"),
+      mimeType: "image/jpeg",
+    });
+  });
+
+  it("converts URL HEIC images to JPEG before returning them", async () => {
+    const release = vi.fn(async () => {});
+    fetchWithSsrFGuardMock.mockResolvedValueOnce({
+      response: new Response(Buffer.from("heic-url-source"), {
+        status: 200,
+        headers: { "content-type": "image/heic" },
+      }),
+      release,
+      finalUrl: "https://example.com/photo.heic",
+    });
+    const normalized = Buffer.from("jpeg-url-normalized");
+    detectMimeMock.mockResolvedValueOnce("image/heic");
+    convertHeicToJpegMock.mockResolvedValueOnce(normalized);
+
+    const image = await extractImageContentFromSource(
+      {
+        type: "url",
+        url: "https://example.com/photo.heic",
+      },
+      {
+        allowUrl: true,
+        allowedMimes: new Set(["image/heic", "image/jpeg"]),
+        maxBytes: 1024 * 1024,
+        maxRedirects: 0,
+        timeoutMs: 1000,
+      },
+    );
+
+    expect(convertHeicToJpegMock).toHaveBeenCalledTimes(1);
+    expect(image).toEqual({
+      type: "image",
+      data: normalized.toString("base64"),
+      mimeType: "image/jpeg",
+    });
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps declared MIME for non-HEIC images without sniffing", async () => {
+    const image = await extractImageContentFromSource(
+      {
+        type: "base64",
+        data: Buffer.from("png-like").toString("base64"),
+        mediaType: "image/png",
+      },
+      {
+        allowUrl: false,
+        allowedMimes: new Set(["image/png"]),
+        maxBytes: 1024 * 1024,
+        maxRedirects: 0,
+        timeoutMs: 1,
+      },
+    );
+
+    expect(detectMimeMock).not.toHaveBeenCalled();
+    expect(convertHeicToJpegMock).not.toHaveBeenCalled();
+    expect(image).toEqual({
+      type: "image",
+      data: Buffer.from("png-like").toString("base64"),
+      mimeType: "image/png",
+    });
+  });
 });
 
 describe("fetchWithGuard", () => {
@@ -111,5 +217,44 @@ describe("base64 size guards", () => {
     const base64Calls = fromSpy.mock.calls.filter((args) => (args as unknown[])[1] === "base64");
     expect(base64Calls).toHaveLength(0);
     fromSpy.mockRestore();
+  });
+});
+
+describe("input image base64 validation", () => {
+  it("rejects malformed base64 payloads", async () => {
+    await expect(
+      extractImageContentFromSource(
+        {
+          type: "base64",
+          data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2N4j8AAAAASUVORK5CYII=" onerror="alert(1)',
+          mediaType: "image/png",
+        },
+        {
+          allowUrl: false,
+          allowedMimes: new Set(["image/png"]),
+          maxBytes: 1024 * 1024,
+          maxRedirects: 0,
+          timeoutMs: 1,
+        },
+      ),
+    ).rejects.toThrow("invalid 'data' field");
+  });
+
+  it("normalizes whitespace in valid base64 payloads", async () => {
+    const image = await extractImageContentFromSource(
+      {
+        type: "base64",
+        data: " aGVs bG8= \n",
+        mediaType: "image/png",
+      },
+      {
+        allowUrl: false,
+        allowedMimes: new Set(["image/png"]),
+        maxBytes: 1024 * 1024,
+        maxRedirects: 0,
+        timeoutMs: 1,
+      },
+    );
+    expect(image.data).toBe("aGVsbG8=");
   });
 });
