@@ -10,6 +10,8 @@ import { randomUUID } from "node:crypto";
 import type * as LanceDB from "@lancedb/lancedb";
 import { Type } from "@sinclair/typebox";
 import OpenAI from "openai";
+import { ensureGlobalUndiciEnvProxyDispatcher } from "openclaw/plugin-sdk/runtime-env";
+import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 import { definePluginEntry, type OpenClawPluginApi } from "./api.js";
 import {
   DEFAULT_CAPTURE_MAX_CHARS,
@@ -168,6 +170,7 @@ class Embeddings {
     if (this.dimensions) {
       params.dimensions = this.dimensions;
     }
+    ensureGlobalUndiciEnvProxyDispatcher();
     const response = await this.client.embeddings.create(params);
     return response.data[0].embedding;
   }
@@ -257,7 +260,7 @@ export function shouldCapture(text: string, options?: { maxChars?: number }): bo
 }
 
 export function detectCategory(text: string): MemoryCategory {
-  const lower = text.toLowerCase();
+  const lower = normalizeLowercaseStringOrEmpty(text);
   if (/prefer|radši|like|love|hate|want/i.test(lower)) {
     return "preference";
   }
