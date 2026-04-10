@@ -13,7 +13,7 @@ import {
   restoreCliRunnerPrepareTestDeps,
   supervisorSpawnMock,
 } from "./cli-runner.test-support.js";
-import { executePreparedCliRun } from "./cli-runner/execute.js";
+import { buildCliEnvAuthLog, executePreparedCliRun } from "./cli-runner/execute.js";
 import { buildSystemPrompt } from "./cli-runner/helpers.js";
 import { setCliRunnerPrepareTestDeps } from "./cli-runner/prepare.js";
 import type { PreparedCliRunContext } from "./cli-runner/types.js";
@@ -39,6 +39,8 @@ function buildPreparedCliRunContext(params: {
           output: "jsonl" as const,
           input: "stdin" as const,
           modelArg: "--model",
+          sessionArg: "--session-id",
+          sessionMode: "always" as const,
           systemPromptArg: "--append-system-prompt",
           systemPromptWhen: "first" as const,
           serialize: true,
@@ -51,6 +53,9 @@ function buildPreparedCliRunContext(params: {
           input: "arg" as const,
           modelArg: "--model",
           sessionMode: "existing" as const,
+          systemPromptFileConfigArg: "-c",
+          systemPromptFileConfigKey: "model_instructions_file",
+          systemPromptWhen: "first" as const,
           serialize: true,
         };
   const backend = { ...baseBackend, ...params.backend };
@@ -107,6 +112,7 @@ describe("runCliAgent spawn path", () => {
       output: "jsonl" as const,
       input: "stdin" as const,
       modelArg: "--model",
+      sessionArg: "--session-id",
       systemPromptArg: "--append-system-prompt",
       systemPromptWhen: "first" as const,
       serialize: true,
@@ -181,6 +187,31 @@ describe("runCliAgent spawn path", () => {
     expect(input.argv).not.toContain("Explain this diff");
   });
 
+  it("passes --session-id for new Claude sessions", async () => {
+    mockSuccessfulCliRun();
+
+    await executePreparedCliRun(
+      buildPreparedCliRunContext({
+        provider: "claude-cli",
+        model: "sonnet",
+        runId: "run-claude-session-id",
+      }),
+    );
+
+    const input = supervisorSpawnMock.mock.calls[0]?.[0] as {
+      argv?: string[];
+      input?: string;
+      mode?: string;
+    };
+    expect(input.mode).toBe("child");
+    expect(input.argv).toContain("claude");
+    const sessionArgIndex = input.argv?.indexOf("--session-id") ?? -1;
+    expect(sessionArgIndex).toBeGreaterThanOrEqual(0);
+    expect(input.argv?.[sessionArgIndex + 1]?.trim()).toBeTruthy();
+    expect(input.input).toContain("hi");
+    expect(input.argv).not.toContain("hi");
+  });
+
   it("runs CLI through supervisor and returns payload", async () => {
     supervisorSpawnMock.mockResolvedValueOnce(
       createManagedRun({
@@ -219,6 +250,39 @@ describe("runCliAgent spawn path", () => {
     expect(input.noOutputTimeoutMs).toBeGreaterThanOrEqual(1_000);
     expect(input.replaceExistingScope).toBe(true);
     expect(input.scopeKey).toContain("thread-123");
+  });
+
+  it("passes Codex system prompts through model_instructions_file", async () => {
+    let promptFileText = "";
+    supervisorSpawnMock.mockImplementationOnce(async (...args: unknown[]) => {
+      const input = (args[0] ?? {}) as { argv?: string[] };
+      const configArgIndex = input.argv?.indexOf("-c") ?? -1;
+      expect(configArgIndex).toBeGreaterThanOrEqual(0);
+      const configArg = input.argv?.[configArgIndex + 1] ?? "";
+      const match = /^model_instructions_file="(.+)"$/.exec(configArg);
+      expect(match?.[1]).toBeTruthy();
+      promptFileText = await fs.readFile(match?.[1] ?? "", "utf-8");
+      return createManagedRun({
+        reason: "exit",
+        exitCode: 0,
+        exitSignal: null,
+        durationMs: 50,
+        stdout: "ok",
+        stderr: "",
+        timedOut: false,
+        noOutputTimedOut: false,
+      });
+    });
+
+    await executePreparedCliRun(
+      buildPreparedCliRunContext({
+        provider: "codex-cli",
+        model: "gpt-5.4",
+        runId: "run-codex-system-prompt-file",
+      }),
+    );
+
+    expect(promptFileText).toBe("You are a helpful assistant.");
   });
 
   it("cancels the managed CLI run when the abort signal fires", async () => {
@@ -494,8 +558,11 @@ describe("runCliAgent spawn path", () => {
     expect(input.env?.SAFE_OVERRIDE).toBe("from-override");
   });
 
-  it("clears claude-cli provider-routing, auth, and telemetry env while keeping host-managed hardening", async () => {
+  it("clears claude-cli provider-routing, auth, telemetry, and host-managed env", async () => {
     vi.stubEnv("ANTHROPIC_BASE_URL", "https://proxy.example.com/v1");
+    vi.stubEnv("ANTHROPIC_API_TOKEN", "env-api-token");
+    vi.stubEnv("ANTHROPIC_CUSTOM_HEADERS", "x-test-header: env");
+    vi.stubEnv("ANTHROPIC_OAUTH_TOKEN", "env-oauth-token");
     vi.stubEnv("CLAUDE_CODE_USE_BEDROCK", "1");
     vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "env-auth-token");
     vi.stubEnv("CLAUDE_CODE_OAUTH_TOKEN", "env-oauth-token");
@@ -506,6 +573,7 @@ describe("runCliAgent spawn path", () => {
     vi.stubEnv("OTEL_TRACES_EXPORTER", "none");
     vi.stubEnv("OTEL_EXPORTER_OTLP_PROTOCOL", "none");
     vi.stubEnv("OTEL_SDK_DISABLED", "true");
+    vi.stubEnv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", "1");
     mockSuccessfulCliRun();
 
     await executePreparedCliRun(
@@ -522,6 +590,9 @@ describe("runCliAgent spawn path", () => {
           },
           clearEnv: [
             "ANTHROPIC_BASE_URL",
+            "ANTHROPIC_API_TOKEN",
+            "ANTHROPIC_CUSTOM_HEADERS",
+            "ANTHROPIC_OAUTH_TOKEN",
             "CLAUDE_CODE_USE_BEDROCK",
             "ANTHROPIC_AUTH_TOKEN",
             "CLAUDE_CODE_OAUTH_TOKEN",
@@ -541,8 +612,11 @@ describe("runCliAgent spawn path", () => {
       env?: Record<string, string | undefined>;
     };
     expect(input.env?.SAFE_KEEP).toBe("ok");
-    expect(input.env?.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST).toBe("1");
+    expect(input.env?.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST).toBeUndefined();
     expect(input.env?.ANTHROPIC_BASE_URL).toBe("https://override.example.com/v1");
+    expect(input.env?.ANTHROPIC_API_TOKEN).toBeUndefined();
+    expect(input.env?.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
+    expect(input.env?.ANTHROPIC_OAUTH_TOKEN).toBeUndefined();
     expect(input.env?.CLAUDE_CODE_USE_BEDROCK).toBeUndefined();
     expect(input.env?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
     expect(input.env?.CLAUDE_CODE_OAUTH_TOKEN).toBe("override-oauth-token");
@@ -553,6 +627,29 @@ describe("runCliAgent spawn path", () => {
     expect(input.env?.OTEL_TRACES_EXPORTER).toBeUndefined();
     expect(input.env?.OTEL_EXPORTER_OTLP_PROTOCOL).toBeUndefined();
     expect(input.env?.OTEL_SDK_DISABLED).toBeUndefined();
+  });
+
+  it("formats CLI auth env diagnostics as key names without secret values", () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-host");
+    vi.stubEnv("ANTHROPIC_API_TOKEN", "token-host");
+    vi.stubEnv("OPENAI_API_KEY", "sk-openai-host");
+
+    const log = buildCliEnvAuthLog({
+      ANTHROPIC_API_TOKEN: "token-child",
+      CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: "1",
+      OPENAI_API_KEY: "sk-openai-child",
+    });
+
+    expect(log).toMatch(/host=.*ANTHROPIC_API_KEY/);
+    expect(log).toMatch(/host=.*ANTHROPIC_API_TOKEN/);
+    expect(log).toMatch(/host=.*OPENAI_API_KEY/);
+    expect(log).toMatch(/child=.*ANTHROPIC_API_TOKEN/);
+    expect(log).toMatch(/child=.*CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST/);
+    expect(log).toMatch(/child=.*OPENAI_API_KEY/);
+    expect(log).toMatch(/cleared=.*ANTHROPIC_API_KEY/);
+    expect(log).not.toContain("sk-ant-host");
+    expect(log).not.toContain("token-child");
+    expect(log).not.toContain("sk-openai-child");
   });
 
   it("prepends bootstrap warnings to the CLI prompt body", async () => {

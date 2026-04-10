@@ -5,11 +5,7 @@ import { loadConfig } from "../config/config.js";
 import { isLoopbackHost } from "../gateway/net.js";
 import { getBridgeAuthForPort } from "./bridge-auth-registry.js";
 import { resolveBrowserControlAuth } from "./control-auth.js";
-import {
-  createBrowserControlContext,
-  startBrowserControlServiceFromConfig,
-} from "./control-service.js";
-import { createBrowserRouteDispatcher } from "./routes/dispatcher.js";
+import { resolveBrowserRateLimitMessage } from "./rate-limit-message.js";
 
 // Application-level error from the browser control service (service is reachable
 // but returned an error response). Must NOT be wrapped with "Can't reach ..." messaging.
@@ -104,34 +100,8 @@ const BROWSER_TOOL_MODEL_HINT =
   "Do NOT retry the browser tool — it will keep failing. " +
   "Use an alternative approach or inform the user that the browser is currently unavailable.";
 
-const BROWSER_SERVICE_RATE_LIMIT_MESSAGE =
-  "Browser service rate limit reached. " +
-  "Wait for the current session to complete, or retry later.";
-
-const BROWSERBASE_RATE_LIMIT_MESSAGE =
-  "Browserbase rate limit reached (max concurrent sessions). " +
-  "Wait for the current session to complete, or upgrade your plan.";
-
 function isRateLimitStatus(status: number): boolean {
   return status === 429;
-}
-
-function isBrowserbaseUrl(url: string): boolean {
-  if (!isAbsoluteHttp(url)) {
-    return false;
-  }
-  try {
-    const host = normalizeLowercaseStringOrEmpty(new URL(url).hostname);
-    return host === "browserbase.com" || host.endsWith(".browserbase.com");
-  } catch {
-    return false;
-  }
-}
-
-export function resolveBrowserRateLimitMessage(url: string): string {
-  return isBrowserbaseUrl(url)
-    ? BROWSERBASE_RATE_LIMIT_MESSAGE
-    : BROWSER_SERVICE_RATE_LIMIT_MESSAGE;
 }
 
 function resolveBrowserFetchOperatorHint(url: string): string {
@@ -247,11 +217,7 @@ export async function fetchBrowserJson<T>(
       return await fetchHttpJson<T>(url, { ...httpInit, timeoutMs });
     }
     isDispatcherPath = true;
-    const started = await startBrowserControlServiceFromConfig();
-    if (!started) {
-      throw new Error("browser control disabled");
-    }
-    const dispatcher = createBrowserRouteDispatcher(createBrowserControlContext());
+    const { dispatchBrowserControlRequest } = await import("./local-dispatch.runtime.js");
     const parsed = new URL(url, "http://localhost");
     const query: Record<string, unknown> = {};
     for (const [key, value] of parsed.searchParams.entries()) {
@@ -291,7 +257,7 @@ export async function fetchBrowserJson<T>(
       timer = setTimeout(() => abortCtrl.abort(new Error("timed out")), timeoutMs);
     }
 
-    const dispatchPromise = dispatcher.dispatch({
+    const dispatchPromise = dispatchBrowserControlRequest({
       method:
         init?.method?.toUpperCase() === "DELETE"
           ? "DELETE"

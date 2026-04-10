@@ -3,14 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   runQaManualLane,
-  runQaSuite,
+  runQaSuiteFromRuntime,
+  runQaCharacterEval,
+  runQaMultipass,
   startQaLabServer,
   writeQaDockerHarnessFiles,
   buildQaDockerHarnessImage,
   runQaDockerUp,
 } = vi.hoisted(() => ({
   runQaManualLane: vi.fn(),
-  runQaSuite: vi.fn(),
+  runQaSuiteFromRuntime: vi.fn(),
+  runQaCharacterEval: vi.fn(),
+  runQaMultipass: vi.fn(),
   startQaLabServer: vi.fn(),
   writeQaDockerHarnessFiles: vi.fn(),
   buildQaDockerHarnessImage: vi.fn(),
@@ -21,8 +25,16 @@ vi.mock("./manual-lane.runtime.js", () => ({
   runQaManualLane,
 }));
 
-vi.mock("./suite.js", () => ({
-  runQaSuite,
+vi.mock("./suite-launch.runtime.js", () => ({
+  runQaSuiteFromRuntime,
+}));
+
+vi.mock("./character-eval.js", () => ({
+  runQaCharacterEval,
+}));
+
+vi.mock("./multipass.runtime.js", () => ({
+  runQaMultipass,
 }));
 
 vi.mock("./lab-server.js", () => ({
@@ -43,6 +55,7 @@ import {
   runQaDockerBuildImageCommand,
   runQaDockerScaffoldCommand,
   runQaDockerUpCommand,
+  runQaCharacterEvalCommand,
   runQaManualLaneCommand,
   runQaSuiteCommand,
 } from "./cli.runtime.js";
@@ -52,22 +65,38 @@ describe("qa cli runtime", () => {
 
   beforeEach(() => {
     stdoutWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
-    runQaSuite.mockReset();
+    runQaSuiteFromRuntime.mockReset();
+    runQaCharacterEval.mockReset();
     runQaManualLane.mockReset();
+    runQaMultipass.mockReset();
     startQaLabServer.mockReset();
     writeQaDockerHarnessFiles.mockReset();
     buildQaDockerHarnessImage.mockReset();
     runQaDockerUp.mockReset();
-    runQaSuite.mockResolvedValue({
+    runQaSuiteFromRuntime.mockResolvedValue({
       watchUrl: "http://127.0.0.1:43124",
       reportPath: "/tmp/report.md",
       summaryPath: "/tmp/summary.json",
+    });
+    runQaCharacterEval.mockResolvedValue({
+      reportPath: "/tmp/character-report.md",
+      summaryPath: "/tmp/character-summary.json",
     });
     runQaManualLane.mockResolvedValue({
       model: "openai/gpt-5.4",
       waited: { status: "ok" },
       reply: "done",
       watchUrl: "http://127.0.0.1:43124",
+    });
+    runQaMultipass.mockResolvedValue({
+      outputDir: "/tmp/multipass",
+      reportPath: "/tmp/multipass/qa-suite-report.md",
+      summaryPath: "/tmp/multipass/qa-suite-summary.json",
+      hostLogPath: "/tmp/multipass/multipass-host.log",
+      bootstrapLogPath: "/tmp/multipass/multipass-guest-bootstrap.log",
+      guestScriptPath: "/tmp/multipass/multipass-guest-run.sh",
+      vmName: "openclaw-qa-test",
+      scenarioIds: ["channel-chat-baseline"],
     });
     startQaLabServer.mockResolvedValue({
       baseUrl: "http://127.0.0.1:58000",
@@ -106,7 +135,7 @@ describe("qa cli runtime", () => {
       scenarioIds: ["approval-turn-tool-followthrough"],
     });
 
-    expect(runQaSuite).toHaveBeenCalledWith({
+    expect(runQaSuiteFromRuntime).toHaveBeenCalledWith({
       repoRoot: path.resolve("/tmp/openclaw-repo"),
       outputDir: path.resolve("/tmp/openclaw-repo", ".artifacts/qa/frontier"),
       providerMode: "live-frontier",
@@ -124,12 +153,113 @@ describe("qa cli runtime", () => {
       scenarioIds: ["approval-turn-tool-followthrough"],
     });
 
-    expect(runQaSuite).toHaveBeenCalledWith(
+    expect(runQaSuiteFromRuntime).toHaveBeenCalledWith(
       expect.objectContaining({
         repoRoot: path.resolve("/tmp/openclaw-repo"),
         providerMode: "live-frontier",
       }),
     );
+  });
+
+  it("resolves character eval paths and passes model refs through", async () => {
+    await runQaCharacterEvalCommand({
+      repoRoot: "/tmp/openclaw-repo",
+      outputDir: ".artifacts/qa/character",
+      model: [
+        "openai/gpt-5.4,thinking=xhigh,fast=false",
+        "codex-cli/test-model,thinking=high,fast",
+      ],
+      scenario: "character-vibes-gollum",
+      fast: true,
+      thinking: "medium",
+      modelThinking: ["codex-cli/test-model=medium"],
+      judgeModel: ["openai/gpt-5.4,thinking=xhigh,fast", "anthropic/claude-opus-4-6,thinking=high"],
+      judgeTimeoutMs: 180_000,
+      blindJudgeModels: true,
+      concurrency: 4,
+      judgeConcurrency: 3,
+    });
+
+    expect(runQaCharacterEval).toHaveBeenCalledWith({
+      repoRoot: path.resolve("/tmp/openclaw-repo"),
+      outputDir: path.resolve("/tmp/openclaw-repo", ".artifacts/qa/character"),
+      models: ["openai/gpt-5.4", "codex-cli/test-model"],
+      scenarioId: "character-vibes-gollum",
+      candidateFastMode: true,
+      candidateThinkingDefault: "medium",
+      candidateThinkingByModel: { "codex-cli/test-model": "medium" },
+      candidateModelOptions: {
+        "openai/gpt-5.4": { thinkingDefault: "xhigh", fastMode: false },
+        "codex-cli/test-model": { thinkingDefault: "high", fastMode: true },
+      },
+      judgeModels: ["openai/gpt-5.4", "anthropic/claude-opus-4-6"],
+      judgeModelOptions: {
+        "openai/gpt-5.4": { thinkingDefault: "xhigh", fastMode: true },
+        "anthropic/claude-opus-4-6": { thinkingDefault: "high" },
+      },
+      judgeTimeoutMs: 180_000,
+      judgeBlindModels: true,
+      candidateConcurrency: 4,
+      judgeConcurrency: 3,
+      progress: expect.any(Function),
+    });
+  });
+
+  it("lets character eval auto-select candidate fast mode when --fast is omitted", async () => {
+    await runQaCharacterEvalCommand({
+      repoRoot: "/tmp/openclaw-repo",
+      model: ["openai/gpt-5.4"],
+    });
+
+    expect(runQaCharacterEval).toHaveBeenCalledWith({
+      repoRoot: path.resolve("/tmp/openclaw-repo"),
+      outputDir: undefined,
+      models: ["openai/gpt-5.4"],
+      scenarioId: undefined,
+      candidateFastMode: undefined,
+      candidateThinkingDefault: undefined,
+      candidateThinkingByModel: undefined,
+      candidateModelOptions: undefined,
+      judgeModels: undefined,
+      judgeModelOptions: undefined,
+      judgeTimeoutMs: undefined,
+      judgeBlindModels: undefined,
+      candidateConcurrency: undefined,
+      judgeConcurrency: undefined,
+      progress: expect.any(Function),
+    });
+  });
+
+  it("rejects invalid character eval thinking levels", async () => {
+    await expect(
+      runQaCharacterEvalCommand({
+        repoRoot: "/tmp/openclaw-repo",
+        model: ["openai/gpt-5.4"],
+        thinking: "enormous",
+      }),
+    ).rejects.toThrow("--thinking must be one of");
+
+    await expect(
+      runQaCharacterEvalCommand({
+        repoRoot: "/tmp/openclaw-repo",
+        model: ["openai/gpt-5.4,thinking=galaxy"],
+      }),
+    ).rejects.toThrow("--model thinking must be one of");
+
+    await expect(
+      runQaCharacterEvalCommand({
+        repoRoot: "/tmp/openclaw-repo",
+        model: ["openai/gpt-5.4,warp"],
+      }),
+    ).rejects.toThrow("--model options must be thinking=<level>");
+
+    await expect(
+      runQaCharacterEvalCommand({
+        repoRoot: "/tmp/openclaw-repo",
+        model: ["openai/gpt-5.4"],
+        modelThinking: ["openai/gpt-5.4"],
+      }),
+    ).rejects.toThrow("--model-thinking must use provider/model=level");
   });
 
   it("passes the explicit repo root into manual runs", async () => {
@@ -152,6 +282,68 @@ describe("qa cli runtime", () => {
       message: "read qa kickoff and reply short",
       timeoutMs: 45_000,
     });
+  });
+
+  it("routes suite runs through multipass when the runner is selected", async () => {
+    await runQaSuiteCommand({
+      repoRoot: "/tmp/openclaw-repo",
+      outputDir: ".artifacts/qa-multipass",
+      runner: "multipass",
+      providerMode: "mock-openai",
+      scenarioIds: ["channel-chat-baseline"],
+      image: "lts",
+      cpus: 2,
+      memory: "4G",
+      disk: "24G",
+    });
+
+    expect(runQaMultipass).toHaveBeenCalledWith({
+      repoRoot: path.resolve("/tmp/openclaw-repo"),
+      outputDir: path.resolve("/tmp/openclaw-repo", ".artifacts/qa-multipass"),
+      providerMode: "mock-openai",
+      primaryModel: undefined,
+      alternateModel: undefined,
+      fastMode: undefined,
+      scenarioIds: ["channel-chat-baseline"],
+      image: "lts",
+      cpus: 2,
+      memory: "4G",
+      disk: "24G",
+    });
+    expect(runQaSuiteFromRuntime).not.toHaveBeenCalled();
+  });
+
+  it("passes live suite selection through to the multipass runner", async () => {
+    await runQaSuiteCommand({
+      repoRoot: "/tmp/openclaw-repo",
+      runner: "multipass",
+      providerMode: "live-frontier",
+      primaryModel: "openai/gpt-5.4",
+      alternateModel: "openai/gpt-5.4",
+      fastMode: true,
+      scenarioIds: ["channel-chat-baseline"],
+    });
+
+    expect(runQaMultipass).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoRoot: path.resolve("/tmp/openclaw-repo"),
+        providerMode: "live-frontier",
+        primaryModel: "openai/gpt-5.4",
+        alternateModel: "openai/gpt-5.4",
+        fastMode: true,
+        scenarioIds: ["channel-chat-baseline"],
+      }),
+    );
+  });
+
+  it("rejects multipass-only suite flags on the host runner", async () => {
+    await expect(
+      runQaSuiteCommand({
+        repoRoot: "/tmp/openclaw-repo",
+        runner: "host",
+        image: "lts",
+      }),
+    ).rejects.toThrow("--image, --cpus, --memory, and --disk require --runner multipass.");
   });
 
   it("defaults manual mock runs onto the mock-openai model lane", async () => {
