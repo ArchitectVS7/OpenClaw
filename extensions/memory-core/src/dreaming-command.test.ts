@@ -20,7 +20,7 @@ function resolveStoredDreaming(config: OpenClawConfig): Record<string, unknown> 
 }
 
 function createHarness(initialConfig: OpenClawConfig = {}) {
-  let command: OpenClawPluginCommandDefinition | undefined;
+  const registered: { command?: OpenClawPluginCommandDefinition } = {};
   let runtimeConfig: OpenClawConfig = initialConfig;
 
   const runtime = {
@@ -35,18 +35,18 @@ function createHarness(initialConfig: OpenClawConfig = {}) {
   const api = {
     runtime,
     registerCommand: vi.fn((definition: OpenClawPluginCommandDefinition) => {
-      command = definition;
+      registered.command = definition;
     }),
   } as unknown as OpenClawPluginApi;
 
   registerDreamingCommand(api);
 
-  if (!command) {
+  if (!registered.command) {
     throw new Error("memory-core did not register /dreaming");
   }
 
   return {
-    command,
+    command: registered.command,
     runtime,
     getRuntimeConfig: () => runtimeConfig,
   };
@@ -196,5 +196,96 @@ describe("memory-core /dreaming command", () => {
 
     expect(result.text).toContain("Usage: /dreaming status");
     expect(runtime.config.writeConfigFile).not.toHaveBeenCalled();
+  });
+
+  it("shows a blocked line directly after enabled when main heartbeat is disabled", async () => {
+    const { command } = createHarness({
+      plugins: {
+        entries: {
+          "memory-core": {
+            config: {
+              dreaming: {
+                enabled: true,
+              },
+            },
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          heartbeat: {
+            every: "0m",
+          },
+        },
+        list: [{ id: "main", default: true }],
+      },
+    });
+
+    const result = await command.handler(createCommandContext("status"));
+    const text = result.text ?? "";
+
+    expect(text).toContain(
+      '- blocked: dreaming is enabled but will not run because heartbeat is disabled for "main". See https://docs.openclaw.ai/concepts/dreaming#troubleshooting',
+    );
+
+    const lines = text.split("\n");
+    const enabledIdx = lines.findIndex((line) => line.startsWith("- enabled:"));
+    const blockedIdx = lines.findIndex((line) => line.startsWith("- blocked:"));
+    expect(enabledIdx).toBeGreaterThan(-1);
+    expect(blockedIdx).toBe(enabledIdx + 1);
+  });
+
+  it("surfaces the blocked line on /dreaming on when main heartbeat is disabled", async () => {
+    const { command } = createHarness({
+      agents: {
+        defaults: {
+          heartbeat: {
+            every: "0m",
+          },
+        },
+        list: [{ id: "main", default: true }],
+      },
+    });
+
+    const result = await command.handler(
+      createCommandContext("on", {
+        gatewayClientScopes: ["operator.admin"],
+      }),
+    );
+    const text = result.text ?? "";
+
+    expect(text).toContain("Dreaming enabled.");
+    expect(text).toContain(
+      '- blocked: dreaming is enabled but will not run because heartbeat is disabled for "main". See https://docs.openclaw.ai/concepts/dreaming#troubleshooting',
+    );
+  });
+
+  it("omits the blocked line when dreaming is enabled and main heartbeat is healthy", async () => {
+    const { command } = createHarness({
+      plugins: {
+        entries: {
+          "memory-core": {
+            config: {
+              dreaming: {
+                enabled: true,
+              },
+            },
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          heartbeat: {
+            every: "30m",
+          },
+        },
+        list: [{ id: "main", default: true }],
+      },
+    });
+
+    const result = await command.handler(createCommandContext("status"));
+
+    expect(result.text).toContain("- enabled: on");
+    expect(result.text).not.toContain("- blocked:");
   });
 });

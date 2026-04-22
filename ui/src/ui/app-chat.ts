@@ -1,12 +1,15 @@
 import { setLastActiveSessionKey } from "./app-last-active-session.ts";
 import { scheduleChatScroll, resetChatScroll } from "./app-scroll.ts";
 import { resetToolStream } from "./app-tool-stream.ts";
+import type { ChatSideResult } from "./chat/side-result.ts";
 import { executeSlashCommand } from "./chat/slash-command-executor.ts";
-import { parseSlashCommand } from "./chat/slash-commands.ts";
+import { parseSlashCommand, refreshSlashCommands } from "./chat/slash-commands.ts";
+import { resolveControlUiAuthHeader } from "./control-ui-auth.ts";
 import {
   abortChatRun,
   loadChatHistory,
   sendChatMessage,
+  sendDetachedChatMessage,
   type ChatState,
 } from "./controllers/chat.ts";
 import { loadModels } from "./controllers/models.ts";
@@ -19,6 +22,7 @@ import type { ChatModelOverride, ModelCatalogEntry } from "./types.ts";
 import type { SessionsListResult } from "./types.ts";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
 import { generateUUID } from "./uuid.ts";
+import { isRenderableControlUiAvatarUrl } from "./views/agents-utils.ts";
 
 export type ChatHost = {
   client: GatewayBrowserClient | null;
@@ -33,8 +37,12 @@ export type ChatHost = {
   lastError?: string | null;
   sessionKey: string;
   basePath: string;
+  settings?: { token?: string | null };
+  password?: string | null;
   hello: GatewayHelloOk | null;
   chatAvatarUrl: string | null;
+  chatSideResult?: ChatSideResult | null;
+  chatSideResultTerminalRuns?: Set<string>;
   chatModelOverrides: Record<string, ChatModelOverride | null>;
   chatModelsLoading: boolean;
   chatModelCatalog: ModelCatalogEntry[];
@@ -79,6 +87,10 @@ function isChatResetCommand(text: string) {
     return true;
   }
   return normalized.startsWith("/new ") || normalized.startsWith("/reset ");
+}
+
+function isBtwCommand(text: string) {
+  return /^\/btw(?::|\s|$)/i.test(text.trim());
 }
 
 export async function handleAbortChat(host: ChatHost) {
@@ -177,6 +189,36 @@ async function sendChatMessageNow(
   return ok;
 }
 
+async function sendDetachedBtwMessage(
+  host: ChatHost,
+  message: string,
+  opts?: {
+    previousDraft?: string;
+    attachments?: ChatAttachment[];
+    previousAttachments?: ChatAttachment[];
+  },
+) {
+  const runId = await sendDetachedChatMessage(
+    host as unknown as ChatState,
+    message,
+    opts?.attachments,
+  );
+  const ok = Boolean(runId);
+  if (!ok && opts?.previousDraft != null) {
+    host.chatMessage = opts.previousDraft;
+  }
+  if (!ok && opts?.previousAttachments) {
+    host.chatAttachments = opts.previousAttachments;
+  }
+  if (ok) {
+    setLastActiveSessionKey(
+      host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
+      host.sessionKey,
+    );
+  }
+  return ok;
+}
+
 async function flushChatQueue(host: ChatHost) {
   if (!host.connected || isChatBusy(host)) {
     return;
@@ -240,6 +282,19 @@ export async function handleSendChat(
 
   if (isChatStopCommand(message)) {
     await handleAbortChat(host);
+    return;
+  }
+
+  if (isBtwCommand(message)) {
+    if (messageOverride == null) {
+      host.chatMessage = "";
+      host.chatAttachments = [];
+    }
+    await sendDetachedBtwMessage(host, message, {
+      previousDraft: messageOverride == null ? previousDraft : undefined,
+      attachments: hasAttachments ? attachmentsToSend : undefined,
+      previousAttachments: messageOverride == null ? attachments : undefined,
+    });
     return;
   }
 
@@ -377,6 +432,8 @@ async function clearChatHistory(host: ChatHost) {
   try {
     await host.client.request("sessions.reset", { key: host.sessionKey });
     host.chatMessages = [];
+    host.chatSideResult = null;
+    host.chatSideResultTerminalRuns?.clear();
     host.chatStream = null;
     host.chatRunId = null;
     await loadChatHistory(host as unknown as ChatState);
@@ -408,6 +465,7 @@ export async function refreshChat(host: ChatHost, opts?: { scheduleScroll?: bool
     }),
     refreshChatAvatar(host),
     refreshChatModels(host),
+    refreshChatCommands(host),
   ]);
   if (opts?.scheduleScroll !== false) {
     scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
@@ -428,12 +486,21 @@ async function refreshChatModels(host: ChatHost) {
   }
 }
 
+async function refreshChatCommands(host: ChatHost) {
+  await refreshSlashCommands({
+    client: host.client,
+    agentId: resolveAgentIdForSession(host),
+  });
+}
+
 export const flushChatQueueForEvent = flushChatQueue;
 const chatAvatarRequestVersions = new WeakMap<object, number>();
 
 type SessionDefaultsSnapshot = {
   defaultAgentId?: string;
 };
+
+const chatAvatarObjectUrls = new WeakMap<object, string>();
 
 function beginChatAvatarRequest(host: ChatHost): number {
   const key = host as object;
@@ -463,12 +530,43 @@ function resolveAgentIdForSession(host: ChatHost): string | null {
 function buildAvatarMetaUrl(basePath: string, agentId: string): string {
   const base = normalizeBasePath(basePath);
   const encoded = encodeURIComponent(agentId);
-  return base ? `${base}/avatar/${encoded}?meta=1` : `avatar/${encoded}?meta=1`;
+  return base ? `${base}/avatar/${encoded}?meta=1` : `/avatar/${encoded}?meta=1`;
+}
+
+function clearChatAvatarUrl(host: ChatHost) {
+  const key = host as object;
+  const previousBlobUrl = chatAvatarObjectUrls.get(key);
+  if (previousBlobUrl) {
+    URL.revokeObjectURL(previousBlobUrl);
+    chatAvatarObjectUrls.delete(key);
+  }
+  host.chatAvatarUrl = null;
+}
+
+function setChatAvatarUrl(host: ChatHost, nextUrl: string | null) {
+  const key = host as object;
+  const previousBlobUrl = chatAvatarObjectUrls.get(key);
+  if (previousBlobUrl && previousBlobUrl !== nextUrl) {
+    URL.revokeObjectURL(previousBlobUrl);
+    chatAvatarObjectUrls.delete(key);
+  }
+  if (nextUrl?.startsWith("blob:")) {
+    chatAvatarObjectUrls.set(key, nextUrl);
+  }
+  host.chatAvatarUrl = nextUrl;
+}
+
+function buildControlUiAuthHeaders(authHeader: string | null): Record<string, string> | undefined {
+  return authHeader ? { Authorization: authHeader } : undefined;
+}
+
+function isLocalControlUiAvatarUrl(avatarUrl: string): boolean {
+  return avatarUrl.startsWith("/");
 }
 
 export async function refreshChatAvatar(host: ChatHost) {
   if (!host.connected) {
-    host.chatAvatarUrl = null;
+    clearChatAvatarUrl(host);
     return;
   }
   const sessionKey = host.sessionKey;
@@ -476,19 +574,21 @@ export async function refreshChatAvatar(host: ChatHost) {
   const agentId = resolveAgentIdForSession(host);
   if (!agentId) {
     if (shouldApplyChatAvatarResult(host, requestVersion, sessionKey)) {
-      host.chatAvatarUrl = null;
+      clearChatAvatarUrl(host);
     }
     return;
   }
-  host.chatAvatarUrl = null;
+  clearChatAvatarUrl(host);
+  const authHeader = resolveControlUiAuthHeader(host);
+  const headers = buildControlUiAuthHeaders(authHeader);
   const url = buildAvatarMetaUrl(host.basePath, agentId);
   try {
-    const res = await fetch(url, { method: "GET" });
+    const res = await fetch(url, { method: "GET", ...(headers ? { headers } : {}) });
     if (!shouldApplyChatAvatarResult(host, requestVersion, sessionKey)) {
       return;
     }
     if (!res.ok) {
-      host.chatAvatarUrl = null;
+      clearChatAvatarUrl(host);
       return;
     }
     const data = (await res.json()) as { avatarUrl?: unknown };
@@ -496,10 +596,33 @@ export async function refreshChatAvatar(host: ChatHost) {
       return;
     }
     const avatarUrl = typeof data.avatarUrl === "string" ? data.avatarUrl.trim() : "";
-    host.chatAvatarUrl = avatarUrl || null;
+    if (!avatarUrl || !isRenderableControlUiAvatarUrl(avatarUrl)) {
+      clearChatAvatarUrl(host);
+      return;
+    }
+    if (!authHeader || !isLocalControlUiAvatarUrl(avatarUrl)) {
+      setChatAvatarUrl(host, avatarUrl);
+      return;
+    }
+    const avatarRes = await fetch(avatarUrl, {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    });
+    if (!avatarRes.ok) {
+      if (shouldApplyChatAvatarResult(host, requestVersion, sessionKey)) {
+        clearChatAvatarUrl(host);
+      }
+      return;
+    }
+    const blobUrl = URL.createObjectURL(await avatarRes.blob());
+    if (!shouldApplyChatAvatarResult(host, requestVersion, sessionKey)) {
+      URL.revokeObjectURL(blobUrl);
+      return;
+    }
+    setChatAvatarUrl(host, blobUrl);
   } catch {
     if (shouldApplyChatAvatarResult(host, requestVersion, sessionKey)) {
-      host.chatAvatarUrl = null;
+      clearChatAvatarUrl(host);
     }
   }
 }
