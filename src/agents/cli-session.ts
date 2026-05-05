@@ -26,6 +26,7 @@ export function getCliSessionBinding(
   if (bindingSessionId) {
     return {
       sessionId: bindingSessionId,
+      ...(fromBindings?.forceReuse === true ? { forceReuse: true } : {}),
       authProfileId: normalizeOptionalString(fromBindings?.authProfileId),
       authEpoch: normalizeOptionalString(fromBindings?.authEpoch),
       authEpochVersion: fromBindings?.authEpochVersion,
@@ -73,6 +74,7 @@ export function setCliSessionBinding(
     ...entry.cliSessionBindings,
     [normalized]: {
       sessionId: trimmed,
+      ...(binding.forceReuse === true ? { forceReuse: true } : {}),
       ...(normalizeOptionalString(binding.authProfileId)
         ? { authProfileId: normalizeOptionalString(binding.authProfileId) }
         : {}),
@@ -112,14 +114,14 @@ export function clearCliSession(entry: SessionEntry, provider: string): void {
     entry.cliSessionIds = Object.keys(next).length > 0 ? next : undefined;
   }
   if (normalized === CLAUDE_CLI_BACKEND_ID) {
-    delete entry.claudeCliSessionId;
+    entry.claudeCliSessionId = undefined;
   }
 }
 
 export function clearAllCliSessions(entry: SessionEntry): void {
-  delete entry.cliSessionBindings;
-  delete entry.cliSessionIds;
-  delete entry.claudeCliSessionId;
+  entry.cliSessionBindings = undefined;
+  entry.cliSessionIds = undefined;
+  entry.claudeCliSessionId = undefined;
 }
 
 export function resolveCliSessionReuse(params: {
@@ -138,6 +140,9 @@ export function resolveCliSessionReuse(params: {
   const sessionId = normalizeOptionalString(binding?.sessionId);
   if (!sessionId) {
     return {};
+  }
+  if (binding?.forceReuse === true) {
+    return { sessionId };
   }
   const currentAuthProfileId = normalizeOptionalString(params.authProfileId);
   const currentAuthEpoch = normalizeOptionalString(params.authEpoch);

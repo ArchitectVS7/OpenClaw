@@ -1,10 +1,10 @@
 import type { ToolDisplaySpec as ToolDisplaySpecBase } from "./tool-display-common.js";
 
-export type ToolDisplaySpec = ToolDisplaySpecBase & {
+type ToolDisplaySpec = ToolDisplaySpecBase & {
   emoji?: string;
 };
 
-export type ToolDisplayConfig = {
+type ToolDisplayConfig = {
   version: number;
   fallback: ToolDisplaySpec;
   tools: Record<string, ToolDisplaySpec>;
@@ -287,7 +287,17 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
     sessions_list: {
       emoji: "🗂️",
       title: "Sessions",
-      detailKeys: ["kinds", "limit", "activeMinutes", "messageLimit"],
+      detailKeys: [
+        "kinds",
+        "label",
+        "agentId",
+        "search",
+        "limit",
+        "activeMinutes",
+        "includeDerivedTitles",
+        "includeLastMessage",
+        "messageLimit",
+      ],
     },
     sessions_send: {
       emoji: "📨",
@@ -559,9 +569,3 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
     },
   },
 };
-
-export function serializeToolDisplayConfig(
-  config: ToolDisplayConfig = TOOL_DISPLAY_CONFIG,
-): string {
-  return `${JSON.stringify(config, null, 2)}\n`;
-}

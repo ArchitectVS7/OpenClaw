@@ -11,17 +11,22 @@ function createContext(
   lastAssistant: unknown,
   overrides?: {
     onAgentEvent?: (event: unknown) => void;
+    onBeforeLifecycleTerminal?: () => void | Promise<void>;
+    onBlockReply?: ((payload: unknown) => void) | undefined;
     onBlockReplyFlush?: () => void | Promise<void>;
   },
 ): EmbeddedPiSubscribeContext {
-  const onBlockReply = vi.fn();
+  const hasOnBlockReplyOverride = Boolean(overrides && "onBlockReply" in overrides);
+  const onBlockReply = hasOnBlockReplyOverride ? overrides?.onBlockReply : vi.fn();
+  const emitBlockReply = vi.fn();
   return {
     params: {
       runId: "run-1",
       config: {},
       sessionKey: "agent:main:main",
       onAgentEvent: overrides?.onAgentEvent,
-      onBlockReply,
+      onBeforeLifecycleTerminal: overrides?.onBeforeLifecycleTerminal,
+      ...(onBlockReply ? { onBlockReply } : {}),
       onBlockReplyFlush: overrides?.onBlockReplyFlush,
     },
     state: {
@@ -41,7 +46,7 @@ function createContext(
       warn: vi.fn(),
     },
     flushBlockReplyBuffer: vi.fn(),
-    emitBlockReply: onBlockReply,
+    emitBlockReply,
     resolveCompactionRetry: vi.fn(),
     maybeResolveCompactionWait: vi.fn(),
   } as unknown as EmbeddedPiSubscribeContext;
@@ -284,6 +289,34 @@ describe("handleAgentEnd", () => {
     });
   });
 
+  it("marks tool-use terminal with pre-tool text as abandoned (#76477)", async () => {
+    const onAgentEvent = vi.fn();
+    const ctx = createContext(
+      {
+        role: "assistant",
+        stopReason: "toolUse",
+        content: [
+          { type: "text", text: "Initial analysis..." },
+          { type: "tool_use", id: "tool_1", name: "read", input: { path: "src/index.ts" } },
+        ],
+      },
+      { onAgentEvent },
+    );
+    ctx.state.livenessState = "working";
+    ctx.state.assistantTexts = ["Initial analysis..."];
+
+    await handleAgentEnd(ctx);
+
+    expect(onAgentEvent).toHaveBeenCalledWith({
+      stream: "lifecycle",
+      data: {
+        phase: "end",
+        livenessState: "abandoned",
+        replayInvalid: true,
+      },
+    });
+  });
+
   it("keeps accumulated deterministic side effects from being marked abandoned", async () => {
     const onAgentEvent = vi.fn();
     const ctx = createContext(undefined, { onAgentEvent });
@@ -317,6 +350,18 @@ describe("handleAgentEnd", () => {
     });
     expect(ctx.state.pendingToolMediaUrls).toEqual([]);
     expect(ctx.state.pendingToolAudioAsVoice).toBe(false);
+  });
+
+  it("preserves orphaned tool media when no block reply callback is configured", async () => {
+    const ctx = createContext(undefined, { onBlockReply: undefined });
+    ctx.state.pendingToolMediaUrls = ["/tmp/reply.opus"];
+    ctx.state.pendingToolAudioAsVoice = true;
+
+    await handleAgentEnd(ctx);
+
+    expect(ctx.emitBlockReply).not.toHaveBeenCalled();
+    expect(ctx.state.pendingToolMediaUrls).toEqual(["/tmp/reply.opus"]);
+    expect(ctx.state.pendingToolAudioAsVoice).toBe(true);
   });
 
   it("emits orphaned tool media before the lifecycle end event", async () => {
@@ -378,6 +423,90 @@ describe("handleAgentEnd", () => {
 
     resolveChannelFlush?.();
     await endPromise;
+  });
+
+  it("runs the before-lifecycle callback before the lifecycle end event", async () => {
+    const order: string[] = [];
+    const onAgentEvent = vi.fn(() => {
+      order.push("event");
+    });
+    const onBeforeLifecycleTerminal = vi.fn(() => {
+      order.push("before");
+    });
+    const ctx = createContext(undefined, {
+      onAgentEvent,
+      onBeforeLifecycleTerminal,
+    });
+
+    await handleAgentEnd(ctx);
+
+    expect(order).toEqual(["before", "event"]);
+    expect(onBeforeLifecycleTerminal).toHaveBeenCalledTimes(1);
+    expect(onAgentEvent).toHaveBeenCalledWith({
+      stream: "lifecycle",
+      data: { phase: "end" },
+    });
+  });
+
+  it("runs an async before-lifecycle callback before the lifecycle end event", async () => {
+    const order: string[] = [];
+    const onAgentEvent = vi.fn(() => {
+      order.push("event");
+    });
+    const onBeforeLifecycleTerminal = vi.fn(() =>
+      Promise.resolve().then(() => {
+        order.push("before");
+      }),
+    );
+    const ctx = createContext(undefined, {
+      onAgentEvent,
+      onBeforeLifecycleTerminal,
+    });
+
+    await handleAgentEnd(ctx);
+
+    expect(order).toEqual(["before", "event"]);
+    expect(onBeforeLifecycleTerminal).toHaveBeenCalledTimes(1);
+    expect(onAgentEvent).toHaveBeenCalledWith({
+      stream: "lifecycle",
+      data: { phase: "end" },
+    });
+  });
+
+  it("still emits lifecycle terminal when sync before-lifecycle callback throws", async () => {
+    const onAgentEvent = vi.fn();
+    const onBeforeLifecycleTerminal = vi.fn(() => {
+      throw new Error("hook exploded");
+    });
+    const ctx = createContext(undefined, {
+      onAgentEvent,
+      onBeforeLifecycleTerminal,
+    });
+
+    await handleAgentEnd(ctx);
+
+    expect(onBeforeLifecycleTerminal).toHaveBeenCalledTimes(1);
+    expect(onAgentEvent).toHaveBeenCalledWith({
+      stream: "lifecycle",
+      data: { phase: "end" },
+    });
+  });
+
+  it("still emits lifecycle terminal when async before-lifecycle callback rejects", async () => {
+    const onAgentEvent = vi.fn();
+    const onBeforeLifecycleTerminal = vi.fn(() => Promise.reject(new Error("hook failed")));
+    const ctx = createContext(undefined, {
+      onAgentEvent,
+      onBeforeLifecycleTerminal,
+    });
+
+    await handleAgentEnd(ctx);
+
+    expect(onBeforeLifecycleTerminal).toHaveBeenCalledTimes(1);
+    expect(onAgentEvent).toHaveBeenCalledWith({
+      stream: "lifecycle",
+      data: { phase: "end" },
+    });
   });
 
   it("emits lifecycle end after async channel flush completes", async () => {

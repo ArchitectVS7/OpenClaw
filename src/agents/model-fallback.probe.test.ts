@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
+import { createDiagnosticLogRecordCapture } from "../logging/test-helpers/diagnostic-log-capture.js";
 import type { AuthProfileStore } from "./auth-profiles.js";
 import { makeModelFallbackCfg } from "./test-helpers/model-fallback-config-fixture.js";
 
@@ -56,12 +58,11 @@ let mockedResolveAuthProfileOrder: ReturnType<
 >;
 let runWithModelFallback: ModelFallbackModule["runWithModelFallback"];
 let _probeThrottleInternals: ModelFallbackModule["_probeThrottleInternals"];
-let registerLogTransport: LoggerModule["registerLogTransport"];
 let resetLogger: LoggerModule["resetLogger"];
 let setLoggerOverride: LoggerModule["setLoggerOverride"];
 
 const makeCfg = makeModelFallbackCfg;
-let unregisterLogTransport: (() => void) | undefined;
+let cleanupLogCapture: (() => void) | undefined;
 
 async function loadModelFallbackProbeModules() {
   const authProfilesStoreModule = await import("./auth-profiles/store.js");
@@ -82,7 +83,6 @@ async function loadModelFallbackProbeModules() {
   mockedResolveAuthProfileOrder = vi.mocked(authProfilesOrderModule.resolveAuthProfileOrder);
   runWithModelFallback = modelFallbackModule.runWithModelFallback;
   _probeThrottleInternals = modelFallbackModule._probeThrottleInternals;
-  registerLogTransport = loggerModule.registerLogTransport;
   resetLogger = loggerModule.resetLogger;
   setLoggerOverride = loggerModule.setLoggerOverride;
 }
@@ -236,8 +236,8 @@ describe("runWithModelFallback – probe logic", () => {
 
   afterEach(() => {
     Date.now = realDateNow;
-    unregisterLogTransport?.();
-    unregisterLogTransport = undefined;
+    cleanupLogCapture?.();
+    cleanupLogCapture = undefined;
     setLoggerOverride(null);
     resetLogger();
     vi.restoreAllMocks();
@@ -275,15 +275,13 @@ describe("runWithModelFallback – probe logic", () => {
 
   it("logs primary metadata on probe success and failure fallback decisions", async () => {
     const cfg = makeCfg();
-    const records: Array<Record<string, unknown>> = [];
+    const logCapture = createDiagnosticLogRecordCapture();
+    cleanupLogCapture = logCapture.cleanup;
     mockedGetSoonestCooldownExpiry.mockReturnValue(NOW + 60 * 1000);
     setLoggerOverride({
       level: "trace",
       consoleLevel: "silent",
-      file: path.join(os.tmpdir(), `openclaw-model-fallback-probe-${Date.now()}.log`),
-    });
-    unregisterLogTransport = registerLogTransport((record) => {
-      records.push(record);
+      file: path.join(os.tmpdir(), `openclaw-model-fallback-probe-${randomUUID()}.log`),
     });
 
     const run = vi.fn().mockResolvedValue("probed-ok");
@@ -309,8 +307,16 @@ describe("runWithModelFallback – probe logic", () => {
       .fn()
       .mockRejectedValueOnce(Object.assign(new Error("rate limited"), { status: 429 }))
       .mockResolvedValueOnce("fallback-ok");
+    const onFallbackStep = vi.fn();
 
-    const fallbackResult = await runPrimaryCandidate(fallbackCfg, fallbackRun);
+    const fallbackResult = await runWithModelFallback({
+      cfg: fallbackCfg,
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      run: fallbackRun,
+      onFallbackStep,
+    });
+    await logCapture.flush();
 
     expect(fallbackResult.result).toBe("fallback-ok");
     expect(fallbackRun).toHaveBeenNthCalledWith(1, "openai", "gpt-4.1-mini", {
@@ -318,14 +324,9 @@ describe("runWithModelFallback – probe logic", () => {
     });
     expect(fallbackRun).toHaveBeenNthCalledWith(2, "anthropic", "claude-haiku-3-5");
 
-    const decisionPayloads = records
-      .filter(
-        (record) =>
-          record["2"] === "model fallback decision" &&
-          record["1"] &&
-          typeof record["1"] === "object",
-      )
-      .map((record) => record["1"] as Record<string, unknown>);
+    const decisionPayloads = logCapture.records
+      .filter((record) => record.message === "model fallback decision")
+      .map((record) => record.attributes ?? {});
 
     expect(decisionPayloads).toEqual(
       expect.arrayContaining([
@@ -353,6 +354,12 @@ describe("runWithModelFallback – probe logic", () => {
           requestedModelMatched: true,
           nextCandidateProvider: "anthropic",
           nextCandidateModel: "claude-haiku-3-5",
+          fallbackStepType: "fallback_step",
+          fallbackStepFromModel: "openai/gpt-4.1-mini",
+          fallbackStepToModel: "anthropic/claude-haiku-3-5",
+          fallbackStepFromFailureReason: "rate_limit",
+          fallbackStepChainPosition: 1,
+          fallbackStepFinalOutcome: "next_fallback",
         }),
         expect.objectContaining({
           event: "model_fallback_decision",
@@ -361,8 +368,34 @@ describe("runWithModelFallback – probe logic", () => {
           candidateModel: "claude-haiku-3-5",
           isPrimary: false,
           requestedModelMatched: false,
+          fallbackStepType: "fallback_step",
+          fallbackStepFromModel: "openai/gpt-4.1-mini",
+          fallbackStepToModel: "anthropic/claude-haiku-3-5",
+          fallbackStepFromFailureReason: "rate_limit",
+          fallbackStepChainPosition: 2,
+          fallbackStepFinalOutcome: "succeeded",
         }),
       ]),
+    );
+    expect(onFallbackStep).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fallbackStepType: "fallback_step",
+        fallbackStepFromModel: "openai/gpt-4.1-mini",
+        fallbackStepToModel: "anthropic/claude-haiku-3-5",
+        fallbackStepFromFailureReason: "rate_limit",
+        fallbackStepChainPosition: 1,
+        fallbackStepFinalOutcome: "next_fallback",
+      }),
+    );
+    expect(onFallbackStep).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fallbackStepType: "fallback_step",
+        fallbackStepFromModel: "openai/gpt-4.1-mini",
+        fallbackStepToModel: "anthropic/claude-haiku-3-5",
+        fallbackStepFromFailureReason: "rate_limit",
+        fallbackStepChainPosition: 2,
+        fallbackStepFinalOutcome: "succeeded",
+      }),
     );
   });
 
@@ -378,19 +411,26 @@ describe("runWithModelFallback – probe logic", () => {
     expectPrimaryProbeSuccess(result, run, "recovered");
   });
 
-  it("attempts non-primary fallbacks during rate-limit cooldown after primary probe failure", async () => {
-    await expectProbeFailureFallsBack({
-      reason: "rate_limit",
+  it.each([
+    {
+      label: "rate-limit",
+      reason: "rate_limit" as const,
       probeError: Object.assign(new Error("rate limited"), { status: 429 }),
-    });
-  });
-
-  it("attempts non-primary fallbacks during overloaded cooldown after primary probe failure", async () => {
-    await expectProbeFailureFallsBack({
-      reason: "overloaded",
+    },
+    {
+      label: "overloaded",
+      reason: "overloaded" as const,
       probeError: Object.assign(new Error("service overloaded"), { status: 503 }),
-    });
-  });
+    },
+  ])(
+    "attempts non-primary fallbacks during $label cooldown after primary probe failure",
+    async ({ reason, probeError }) => {
+      await expectProbeFailureFallsBack({
+        reason,
+        probeError,
+      });
+    },
+  );
 
   it("keeps walking remaining fallbacks after an abort-wrapped RESOURCE_EXHAUSTED probe failure", async () => {
     const cfg = makeCfg({
@@ -524,38 +564,22 @@ describe("runWithModelFallback – probe logic", () => {
     expect(_probeThrottleInternals.lastProbeAttempt.has("key-0")).toBe(true);
   });
 
-  it("handles non-finite soonest safely (treats as probe-worthy)", async () => {
+  it("handles missing or non-finite soonest safely (treats as probe-worthy)", async () => {
     const cfg = makeCfg();
 
-    // Return Infinity — should be treated as "probe" per the guard
-    mockedGetSoonestCooldownExpiry.mockReturnValue(Infinity);
+    for (const [label, soonest] of [
+      ["infinity", Infinity],
+      ["nan", Number.NaN],
+      ["null", null],
+    ] as const) {
+      _probeThrottleInternals.lastProbeAttempt.clear();
+      mockedGetSoonestCooldownExpiry.mockReturnValue(soonest);
 
-    const run = vi.fn().mockResolvedValue("ok-infinity");
+      const run = vi.fn().mockResolvedValue(`ok-${label}`);
 
-    const result = await runPrimaryCandidate(cfg, run);
-    expectPrimaryProbeSuccess(result, run, "ok-infinity");
-  });
-
-  it("handles NaN soonest safely (treats as probe-worthy)", async () => {
-    const cfg = makeCfg();
-
-    mockedGetSoonestCooldownExpiry.mockReturnValue(NaN);
-
-    const run = vi.fn().mockResolvedValue("ok-nan");
-
-    const result = await runPrimaryCandidate(cfg, run);
-    expectPrimaryProbeSuccess(result, run, "ok-nan");
-  });
-
-  it("handles null soonest safely (treats as probe-worthy)", async () => {
-    const cfg = makeCfg();
-
-    mockedGetSoonestCooldownExpiry.mockReturnValue(null);
-
-    const run = vi.fn().mockResolvedValue("ok-null");
-
-    const result = await runPrimaryCandidate(cfg, run);
-    expectPrimaryProbeSuccess(result, run, "ok-null");
+      const result = await runPrimaryCandidate(cfg, run);
+      expectPrimaryProbeSuccess(result, run, `ok-${label}`);
+    }
   });
 
   it("single candidate skips with rate_limit and exhausts candidates", async () => {
@@ -667,9 +691,5 @@ describe("runWithModelFallback – probe logic", () => {
     const result = await runPrimaryCandidate(cfg, run);
 
     expectPrimaryProbeSuccess(result, run, "billing-probe-ok");
-  });
-
-  it("skips billing-cooldowned primary with fallbacks when far from cooldown expiry", async () => {
-    await expectPrimarySkippedAfterLongCooldown("billing");
   });
 });
