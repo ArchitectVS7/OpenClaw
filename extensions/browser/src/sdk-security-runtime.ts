@@ -1,29 +1,22 @@
-export { createSubsystemLogger } from "openclaw/plugin-sdk/logging-core";
+/**
+ * Browser-local SDK security bridge.
+ */
 export {
   ensurePortAvailable,
   extractErrorCode,
   formatErrorMessage,
   hasProxyEnvConfigured,
-  isNotFoundPathError,
-  isPathInside,
   isPrivateNetworkAllowedByPolicy,
   matchesHostnameAllowlist,
   normalizeHostname,
   pathScope,
-  redactSensitiveText,
   resolveExistingPathsWithinRoot,
   resolvePinnedHostnameWithPolicy,
-  resolvePathsWithinRoot,
-  resolvePathWithinRoot,
-  root,
-  safeEqualSecret,
   sanitizeUntrustedFileName,
   resolveStrictExistingPathsWithinRoot,
-  resolveWritablePathWithinRoot,
-  FsSafeError,
+  root,
   SsrFBlockedError,
   writeExternalFileWithinRoot,
-  writeViaSiblingTempPath,
   wrapExternalContent,
 } from "openclaw/plugin-sdk/security-runtime";
 export type { LookupFn, SsrFPolicy } from "openclaw/plugin-sdk/security-runtime";
